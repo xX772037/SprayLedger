@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PARCEL_SOURCES, normalizeFeature, queryParcels, sourcesFor, neighbourZone, classifyParcels, parcelCenter, clippedArea } from '../src/parcels.js';
+import { PARCEL_SOURCES, normalizeFeature, queryParcels, sourcesFor, neighbourZone, classifyParcels, parcelCenter, clippedArea, parseAddress, numberDistance, searchAddress, legalDescription } from '../src/parcels.js';
 import { ringArea } from '../src/geo.js';
 
 const src = name => PARCEL_SOURCES.find(s => s.county === name);
@@ -94,4 +94,35 @@ test('clipped area of a parcel inside a convex zone', () => {
   assert.equal(clippedArea(sq(0, 0, 10, 10), sq(0, 0, 10, 10).reverse()), 100); // either winding
   const L = [[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]];               // concave parcel
   assert.equal(clippedArea(L, sq(0, 0, 10, 10)), 64);
+});
+
+test('addresses are parsed loosely, the way people type them', () => {
+  assert.deepEqual(parseAddress('4123 277th street parlston sd'), { num: '4123', street: '277' });
+  assert.deepEqual(parseAddress('41255 277TH ST'), { num: '41255', street: '277' });
+  assert.deepEqual(parseAddress('101 W Main St, Lake Andes'), { num: '101', street: 'MAIN' });
+  assert.equal(parseAddress('  '), null);
+});
+
+test('a house number with digits missing is compared as a prefix', () => {
+  assert.equal(numberDistance('4123', '41230'), 0);
+  assert.ok(numberDistance('4123', '41215') < numberDistance('4123', '41255'));
+  assert.equal(numberDistance('41255', '41255'), 0);
+});
+
+test('address search: exact match, else nearest numbers on the same road, never other roads', async () => {
+  const site = (s, lat) => feat({ SITE_ADDRESS: s, PARCEL_NUM: s, OWNERNAME: 'X' }, lat, -97.95);
+  const fetchImpl = async url => ({ ok: true, json: async () => ({ features: url.includes('HUTCHINSON')
+    ? [site('41215 277TH ST', 43.37), site('41255 277TH ST', 43.369), site('27778 414TH AVE', 43.36), site('41352 277TH ST', 43.37)] : [] }) });
+  const miss = await searchAddress('4123 277th street parlston sd', { fetchImpl });
+  assert.deepEqual(miss.exact, []);
+  assert.deepEqual(miss.near.map(p => p.site), ['41215 277TH ST', '41255 277TH ST', '41352 277TH ST']);
+  const hit = await searchAddress('41255 277th st', { fetchImpl });
+  assert.deepEqual(hit.exact.map(p => p.site), ['41255 277TH ST']);
+  const road = await searchAddress('277th st', { fetchImpl });
+  assert.ok(road.exact.every(p => p.site.includes('277TH ST')), 'a house number starting with 277 is not on 277th St');
+});
+
+test('county legal text becomes a section-township-range description', () => {
+  assert.equal(legalDescription({ legal: 'W1/2 NE1/4\r\n28.99.60' }), 'W1/2 NE1/4 28-99-60');
+  assert.equal(legalDescription({ legal: '' }), '');
 });

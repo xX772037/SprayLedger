@@ -12,7 +12,7 @@ import { FieldMap } from './map.js';
 import { fetchForecast, fetchConditionsAt, assessHour, sprayWindows, downwindEdges, compass16 } from './weather.js';
 import { DeviceGPS, SerialGPS, SimulatedRig, LiveSession } from './live.js';
 import { SPRAY_LIMITS } from './config.js';
-import { PARCEL_SOURCES, PARCEL_ATTRIBUTION, NOT_COVERED_NEARBY, queryParcels, sourcesFor, neighbourZone, classifyParcels, downwindEdgesLL } from './parcels.js';
+import { PARCEL_SOURCES, PARCEL_ATTRIBUTION, NOT_COVERED_NEARBY, queryParcels, sourcesFor, neighbourZone, classifyParcels, downwindEdgesLL, searchAddress, parcelCenter, legalDescription } from './parcels.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -138,6 +138,7 @@ function ensureMap() {
     onMove: probe,
     onTileStatus: s => { $('tileNote').hidden = s !== 'blocked'; },
     onMoveEnd: scheduleViewParcels,
+    onSearch: findAddress,
   });
   return fmap;
 }
@@ -371,10 +372,39 @@ async function loadViewParcels() {
   }
 }
 
+async function findAddress(text) {
+  const box = $('searchResults');
+  box.hidden = false;
+  $('mapEmpty').hidden = true;
+  box.innerHTML = '<p>Looking up the address in county records…</p>';
+  let r;
+  try { r = await searchAddress(text); }
+  catch { r = { query: null, exact: [], near: [], failed: true }; }
+  const pickBtn = (p, i) => `<button type="button" class="pick" data-i="${i}"><b>${esc(p.site)}</b><span>${esc(p.county)} County · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 1)} acres` : ''}</span></button>`;
+  const list = r.exact.length ? r.exact : r.near;
+  const close = '<button type="button" class="btn" data-close>Close</button>';
+  if (!r.query) box.innerHTML = `<p>Type a house number and road, like <b>41255 277th St</b>, or a latitude and longitude.</p>${close}`;
+  else if (!list.length) {
+    box.innerHTML = `<p>${r.failed || embedded ? 'County records couldn\'t be reached from here.' : `No address on that road in the county records for ${COVERED} counties.`}</p>${close}`;
+  } else {
+    box.innerHTML = `<p>${r.exact.length ? (list.length > 1 ? 'Pick one:' : 'Found:') : `No exact match for <b>${esc(text)}</b>. Closest on that road:`}</p>${list.map(pickBtn).join('')}${close}`;
+  }
+  box.onclick = e => {
+    if (e.target.closest('[data-close]')) { box.hidden = true; return; }
+    const b = e.target.closest('.pick'); if (!b) return;
+    const p = list[+b.dataset.i];
+    box.hidden = true;
+    fmap.fitTo(p.polygons);
+    setTimeout(() => showParcel(p, parcelCenter(p)), 400);
+  };
+  if (list.length === 1 && r.exact.length) box.querySelector('.pick').click();
+}
+
 function showParcel(p, ll) {
   const el = document.createElement('div');
   el.className = 'parcel-pop';
   el.innerHTML = `<b>${esc(p.owner || 'Owner not listed')}</b>
+    ${p.site ? `<span>${esc(p.site)}</span>` : ''}
     <span>${esc(p.county)} County · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 2)} ac` : ''}</span>
     ${p.legal ? `<span class="muted">${esc(p.legal)}</span>` : ''}
     ${p.mailing ? `<span class="muted">${esc(p.mailing)}</span>` : ''}
@@ -395,9 +425,10 @@ function useParcel(p, add) {
     state.boundary = [...state.boundary, ...p.polygons];
     j.parcels = uniq([...String(j.parcels || '').split(/,\s*/), p.parcel], ', ');
     j.landowner = uniq([...String(j.landowner || '').split(/;\s*/), p.owner], '; ');
+    j.legal = uniq([...String(j.legal || '').split(/;\s*/), legalDescription(p)], '; ');
   } else {
     state.boundary = p.polygons.map(poly => poly.map(r => r.slice()));
-    j.parcels = p.parcel; j.landowner = p.owner;
+    j.parcels = p.parcel; j.landowner = p.owner; j.legal = legalDescription(p);
   }
   state.notices = state.notices.filter(n => !/boundary/i.test(n.text));
   state.notices.push({ text: `Field boundary ${add ? 'extended with' : 'set from'} ${p.county} County parcel ${p.parcel || ''}. County parcel lines follow legal descriptions, so trim it with Redraw boundary if the sprayed area is smaller (waterways, farmstead, road ditches).` });
@@ -446,6 +477,7 @@ async function lookupOwners(force = false) {
   if (c.field.length && !j.parcels && !j.landowner) {
     j.parcels = [...new Set(c.field.map(p => p.parcel).filter(Boolean))].join(', ');
     j.landowner = [...new Set(c.field.map(p => p.owner).filter(Boolean))].join('; ');
+    if (!j.legal) j.legal = [...new Set(c.field.map(legalDescription).filter(Boolean))].join('; ');
     fillForm(); markDirty();
   }
   const fieldOwners = [...new Set(c.field.map(p => p.owner || 'Owner not listed'))];

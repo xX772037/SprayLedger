@@ -121,7 +121,8 @@ async function getJSON(url, fetchImpl) {
   let res;
   try { res = await fetchImpl(url); }
   catch { throw new Error('Weather service unreachable. Check the connection; embedded previews block outside data.'); }
-  if (!res.ok) throw new Error(`Weather service answered ${res.status}.`);
+  if (res.status === 429) throw new Error('The weather service is busy (its free daily limit was reached for this connection). Try again later.');
+  if (!res.ok) throw new Error(`The weather service isn't answering right now (error ${res.status}). Try again later.`);
   return res.json();
 }
 

@@ -192,9 +192,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .basemap-ctl button + button { border-left: 2px solid #bbb; }
 .basemap-ctl button[aria-pressed="true"] { background: #1b5a38; color: #fff; }
 .goto-ctl { display: flex; background: #fff; }
-.goto-ctl input { width: 11rem; min-height: 2.9rem; border: 0; border-radius: 0; background: #fff; color: #111; padding: 0 0.6rem; font: 1rem var(--font); }
+.goto-ctl input { width: 15rem; min-height: 2.9rem; border: 0; border-radius: 0; background: #fff; color: #111; padding: 0 0.6rem; font: 1rem var(--font); }
 .goto-ctl button { border: 0; border-left: 2px solid #bbb; background: #fff; color: #111; font: 700 1rem var(--font); min-width: 2.9rem; padding: 0 0.6rem; cursor: pointer; }
-@media (max-width: 480px) { .goto-ctl input { width: 8.5rem; } }
+@media (max-width: 480px) { .goto-ctl input { width: 10rem; } }
 .gap-pin { display: grid; place-items: center; border-radius: 50%; background: #fff; border: 3px solid #d02020; color: #111; font: 700 0.85rem var(--font); box-shadow: 0 1px 4px rgba(0,0,0,.5); }
 .rig-pin svg { width: 30px; height: 30px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
 .parcel-pop { display: grid; gap: 0.3rem; font: 1rem/1.4 var(--font); color: #111; }
@@ -363,3 +363,13 @@ dialog::backdrop { background: rgba(10, 15, 12, .55); }
 #exportText { font: 0.85rem/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre; overflow: auto; }
 
 @media (prefers-reduced-motion: reduce) { .fold > summary::before { transition: none; } }
+
+.search-results {
+  position: absolute; left: 0.75rem; top: 7.2rem; z-index: 700; width: min(26rem, calc(100% - 1.5rem)); max-height: calc(100% - 8rem); overflow: auto;
+  display: grid; gap: 0.5rem; padding: 0.8rem; background: var(--surface); color: var(--ink); border: 2px solid var(--line); border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.3);
+}
+.search-results p { margin: 0; }
+.search-results .pick { display: grid; gap: 0.1rem; text-align: left; min-height: 3.4rem; padding: 0.5rem 0.8rem; border: 2px solid var(--ink); border-radius: 10px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; }
+.search-results .pick b { font-size: 1.05rem; }
+.search-results .pick span { color: var(--muted); font-size: 0.9rem; }
+.search-results .pick:hover { background: var(--surface-2); }

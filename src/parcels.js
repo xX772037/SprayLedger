@@ -12,21 +12,21 @@ const mail = (street, cityLine) => ({ street, cityLine });
 // bbox = [south, west, north, east] in degrees, from each layer's own extent.
 export const PARCEL_SOURCES = [
   { county: 'Hutchinson', url: `${BASE}/HUTCHINSON_COUNTY_WEB_LAYERS2/MapServer/14`, bbox: [43.1528, -98.1268, 43.5159, -97.3832],
-    f: { owner: ['OWNERNAME'], parcel: ['PARCEL_NUM', 'PARCEL_ID'], acres: ['DEEDED_ACRES', 'acres'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_ST', 'MAILING_ZIP']) } },
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL_NUM', 'PARCEL_ID'], acres: ['DEEDED_ACRES', 'acres'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_ST', 'MAILING_ZIP']) } },
   { county: 'Hanson', url: `${BASE}/HANSON_COUNTY_WEB_LAYERS/MapServer/4`, bbox: [43.4911, -97.9810, 43.8570, -97.5912],
-    f: { owner: ['DEEDHOLDER'], parcel: ['PARCEL_NUMBER', 'PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
+    f: { site: ['SITE_ADDRESS'], owner: ['DEEDHOLDER'], parcel: ['PARCEL_NUMBER', 'PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
   { county: 'Davison', url: `${BASE}/DAVISON_COUNTY_WEB_LAYERS1/MapServer/4`, bbox: [43.4918, -98.3370, 43.8575, -97.9507],
-    f: { owner: ['OWNERNAME', 'DEEDHOLDER'], parcel: ['PARCEL_ID'], acres: ['DEEDED_ACRE', 'TOTAL_ACRES'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME', 'DEEDHOLDER'], parcel: ['PARCEL_ID'], acres: ['DEEDED_ACRE', 'TOTAL_ACRES'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
   { county: 'Douglas', url: `${BASE}/DOUGLAS_COUNTY_WEB_LAYERS/MapServer/3`, bbox: [43.1973, -98.7146, 43.5083, -98.0984],
-    f: { owner: ['CAMA_OWNERNAME'], parcel: ['PARCEL_ID'], acres: ['CAMA_ACRES', 'GIS_ACRES'], legal: ['CAMA_LEGAL1'], ...mail(['CAMA_MAILING_ADDRESS'], ['CAMA_MAILING_CITY', 'CAMA_MAILING_STATE', 'CAMA_MAILING_ZIP']) } },
+    f: { site: ['CAMA_SITE_ADDRESS'], owner: ['CAMA_OWNERNAME'], parcel: ['PARCEL_ID'], acres: ['CAMA_ACRES', 'GIS_ACRES'], legal: ['CAMA_LEGAL1'], ...mail(['CAMA_MAILING_ADDRESS'], ['CAMA_MAILING_CITY', 'CAMA_MAILING_STATE', 'CAMA_MAILING_ZIP']) } },
   { county: 'Charles Mix', url: `${BASE}/CHARLES_MIX_WEB_LAYERS3/MapServer/6`, bbox: [42.8377, -99.3166, 43.5062, -98.0581],
-    f: { owner: ['deedhold'], parcel: ['Parcelid', 'PARCEL'], acres: ['GrossAcres', 'DIG_ACRES'], legal: ['LegalDesc'], ...mail(['deedaddr1'], ['deedaddr2', 'deedaddr3', 'deedzip']) } },
+    f: { site: ['ADDRESS'], owner: ['deedhold'], parcel: ['Parcelid', 'PARCEL'], acres: ['GrossAcres', 'DIG_ACRES'], legal: ['LegalDesc'], ...mail(['deedaddr1'], ['deedaddr2', 'deedaddr3', 'deedzip']) } },
   { county: 'Bon Homme', url: `${BASE}/BON_HOMME_COUNTY_WEB_LAYERS2/MapServer/1`, bbox: [42.7544, -98.1659, 43.1798, -97.6217],
-    f: { owner: ['TC_OWNER'], parcel: ['PARCEL_ID', 'PARCEL'], acres: ['TC_ACRES', 'A1_ACRES'], legal: ['TC_LEGAL1'], ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
+    f: { site: ['TC_SITE_ADDRESS'], owner: ['TC_OWNER'], parcel: ['PARCEL_ID', 'PARCEL'], acres: ['TC_ACRES', 'A1_ACRES'], legal: ['TC_LEGAL1'], ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
   { county: 'Turner', url: `${BASE}/TURNER_COUNTY_LAYERS/MapServer/4`, bbox: [43.0762, -97.4212, 43.5133, -96.9006],
-    f: { owner: ['OWNERNAME'], parcel: ['PARCEL', 'parcel_id'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL', 'parcel_id'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
   { county: 'Yankton', url: `${BASE}/YANKTON_PROVAL_LAYERS/MapServer/104`, bbox: [42.7994, -97.6532, 43.1823, -97.1410], paging: false, // joined table: no result paging
-    f: { owner: ['DATA3.OWNERNAME1'], parcel: ['PARCEL.PARCEL_ID', 'DATA3.PARCEL_ID'], acres: ['DATA3.DEEDED_ACRES'], legal: ['DATA3.LEGAL1'], ...mail(['DATA3.ADDRESS1', 'DATA3.ADDRESS2'], ['DATA3.ADDRESS3', 'DATA3.ZIP']) } },
+    f: { site: ['DATA3.SITE_ADDRESS'], owner: ['DATA3.OWNERNAME1'], parcel: ['PARCEL.PARCEL_ID', 'DATA3.PARCEL_ID'], acres: ['DATA3.DEEDED_ACRES'], legal: ['DATA3.LEGAL1'], ...mail(['DATA3.ADDRESS1', 'DATA3.ADDRESS2'], ['DATA3.ADDRESS3', 'DATA3.ZIP']) } },
 ];
 
 export const PARCEL_ATTRIBUTION = 'Parcels &copy; county Directors of Equalization, via Planning &amp; Development District III';
@@ -55,6 +55,7 @@ export function normalizeFeature(feature, src) {
     parcel,
     acres: Number.isFinite(acres) && acres > 0 ? acres : null,
     legal: first(src.f.legal),
+    site: first(src.f.site || []),
     mailing: [street, cityLine].filter(Boolean).join(', '),
     polygons: polys.map(poly => poly.map(ring => ring.map(([lon, lat]) => [lat, lon]))),
   };
@@ -251,4 +252,76 @@ export function classifyParcels(parcels, zone) {
 export function downwindEdgesLL(boundaryLL, windFromDeg) {
   const z = neighbourZone(boundaryLL, windFromDeg, 1);
   return z.rings.map(r => [r[0], r[1]]);
+}
+
+// ---------- address search ----------
+
+const ORDINAL = /^(\d+)(ST|ND|RD|TH)$/;
+const STREET_WORDS = new Set(['ST', 'STREET', 'AVE', 'AVENUE', 'RD', 'ROAD', 'DR', 'DRIVE', 'LN', 'LANE', 'BLVD', 'HWY', 'HIGHWAY', 'N', 'S', 'E', 'W', 'SD', 'SOUTH', 'DAKOTA']);
+
+/** "4123 277th street parkston sd" → { num: '4123', street: '277' }. Returns null when there's nothing to search for. */
+export function parseAddress(text) {
+  const t = String(text).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!t.length) return null;
+  const num = /^\d+$/.test(t[0]) ? t.shift() : null;
+  const words = t.filter(w => !STREET_WORDS.has(w));
+  if (!words.length) return null;
+  const m = words[0].match(ORDINAL);
+  return { num, street: m ? m[1] : words[0] };
+}
+
+const houseNo = addr => { const m = String(addr).trim().match(/^(\d+)/); return m ? m[1] : null; };
+
+/** How close a house number is to what was typed; a typed number with missing digits is compared as a prefix. */
+export function numberDistance(typed, actual) {
+  if (!typed || !actual) return Infinity;
+  if (actual.startsWith(typed)) return 0;
+  const scale = actual.length > typed.length ? 10 ** (actual.length - typed.length) : 1;
+  return Math.abs(Number(typed) * scale - Number(actual));
+}
+
+/**
+ * Find parcels by site address in every covered county.
+ * Returns { query, exact: [parcel], near: [parcel] } — near holds the closest house numbers on the same road
+ * when nothing matches exactly.
+ */
+export async function searchAddress(text, { fetchImpl = fetch, signal } = {}) {
+  const q = parseAddress(text);
+  if (!q) return { query: null, exact: [], near: [] };
+  const all = [];
+  await Promise.all(PARCEL_SOURCES.map(async src => {
+    const field = src.f.site?.[0];
+    if (!field) return;
+    // Rural roads are written "277TH ST" in most counties and "277 ST" in some.
+    const where = `UPPER(${field}) LIKE '%${q.street}%'` + (q.num ? ` AND UPPER(${field}) LIKE '%${q.num.slice(0, 2)}%'` : '');
+    const outFields = [...new Set(Object.values(src.f).flat())].join(',');
+    const p = new URLSearchParams({ where, outFields, returnGeometry: 'true', outSR: '4326', geometryPrecision: '6', maxAllowableOffset: '0.000004', f: 'geojson' });
+    if (src.paging !== false) p.set('resultRecordCount', '400');
+    try {
+      const res = await fetchImpl(`${src.url}/query?${p}`, { signal });
+      if (!res.ok) return;
+      const json = await res.json();
+      for (const f of json.features || []) {
+        const parcel = normalizeFeature(f, src);
+        if (!parcel?.site) continue;
+        const words = parcel.site.toUpperCase().trim().split(/\s+/);
+        if (/^\d+$/.test(words[0])) words.shift(); // the house number isn't the road
+        const onRoad = words.some(w => w === q.street || w.match(ORDINAL)?.[1] === q.street);
+        if (onRoad) all.push(parcel);
+      }
+    } catch (e) { if (e.name === 'AbortError') throw e; }
+  }));
+  const seen = new Set();
+  const uniq = all.filter(p => (seen.has(p.id) ? false : seen.add(p.id)));
+  if (!q.num) return { query: q, exact: uniq.slice(0, 8), near: [] };
+  const exact = uniq.filter(p => houseNo(p.site) === q.num);
+  if (exact.length) return { query: q, exact, near: [] };
+  const ranked = uniq.filter(p => houseNo(p.site)).sort((a, b) => numberDistance(q.num, houseNo(a.site)) - numberDistance(q.num, houseNo(b.site)));
+  const prefix = ranked.filter(p => houseNo(p.site).startsWith(q.num));
+  return { query: q, exact: prefix.slice(0, 6), near: prefix.length ? [] : ranked.slice(0, 4) };
+}
+
+/** County legal text like "W1/2 NE1/4\r\n28.99.60" → "W1/2 NE1/4 28-99-60" (section-township-range). */
+export function legalDescription(parcel) {
+  return String(parcel?.legal || '').replace(/\s+/g, ' ').trim().replace(/\b(\d{1,2})\.(\d{2,3})\.(\d{2,3})\b/, '$1-$2-$3');
 }

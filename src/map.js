@@ -6,7 +6,7 @@ import { BASEMAPS } from './config.js';
 const L = () => window.L;
 
 export class FieldMap {
-  constructor(el, { onClick, onMove, onTileStatus, onMoveEnd } = {}) {
+  constructor(el, { onClick, onMove, onTileStatus, onMoveEnd, onSearch } = {}) {
     const Lf = L();
     this.map = Lf.map(el, { zoomSnap: 0.25, zoomControl: true, attributionControl: true, maxZoom: 21 }).setView([39.5, -96], 4);
     this.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
@@ -57,14 +57,13 @@ export class FieldMap {
     const Go = Lf.Control.extend({
       onAdd: () => {
         const f = Lf.DomUtil.create('form', 'leaflet-bar goto-ctl');
-        f.innerHTML = '<input id="gotoInput" type="text" inputmode="decimal" placeholder="Go to lat, lon" aria-label="Go to latitude, longitude"><button type="submit" aria-label="Go">Go</button><button type="button" data-me aria-label="My location">◎</button>';
+        f.innerHTML = '<input id="gotoInput" type="search" enterkeyhint="search" placeholder="Address, or lat, lon" aria-label="Find an address or latitude, longitude"><button type="submit" aria-label="Find">Find</button><button type="button" data-me aria-label="Go to my location" title="Go to my location">◎</button>';
         Lf.DomEvent.disableClickPropagation(f); Lf.DomEvent.disableScrollPropagation(f);
         const input = f.querySelector('input');
         f.addEventListener('submit', e => {
           e.preventDefault();
-          const m = input.value.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
-          if (!m) { input.setCustomValidity('Enter latitude, longitude, e.g. 43.33, -97.75'); input.reportValidity(); return; }
-          input.setCustomValidity('');
+          const m = input.value.trim().match(/^(-?\d{1,3}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)$/);
+          if (!m) { input.blur(); onSearch?.(input.value); return; }
           let [la, lo] = [parseFloat(m[1]), parseFloat(m[2])];
           if (Math.abs(la) > 90 && Math.abs(lo) <= 90) [la, lo] = [lo, la];
           this.follow = false;
@@ -204,6 +203,12 @@ Object.assign(FieldMap.prototype, {
     const poly = Lf.polygon(boundaryLL, { color: '#ffffff', weight: 2.5, fillColor: '#e03030', fillOpacity: 0.18, interactive: false }).addTo(this.layers.plan);
     this.bounds = poly.getBounds();
     if (fit) this.fit();
+  },
+
+  fitTo(polygonsLL) {
+    const b = L().polygon(polygonsLL).getBounds();
+    this.follow = false;
+    this.map.fitBounds(b, { padding: [30, 30], maxZoom: 17 });
   },
 
   popup(latlng, el) { L().popup({ maxWidth: 300, autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(el).openOn(this.map); },

@@ -62,7 +62,7 @@
 
     <!-- STEP 1: FIELD -->
     <section class="step" data-panel="field" role="tabpanel" aria-label="Field">
-      <p class="lead">Find the field on the map, then <b>tap the parcel</b> to use it as the field. You can also draw the field's corners, or load a boundary file.</p>
+      <p class="lead">Type the field's address in the box on the map, then <b>tap the parcel</b> to use it as the field. You can also draw the field's corners, or load a boundary file.</p>
       <div class="row-actions">
         <button type="button" class="btn btn-big" id="btnDraw">Draw the field</button>
         <button type="button" class="btn btn-big" id="btnLoadBoundary">Load a boundary file</button>
@@ -308,7 +308,8 @@
 <section class="mapcard" id="mapcard" aria-label="Map">
   <div class="map-wrap">
     <div id="map" aria-label="Map of the field"></div>
-    <div class="map-note" id="mapEmpty">Type the field's coordinates in the box at the top left, or tap ◎ to go to where you are.</div>
+    <div class="map-note" id="mapEmpty">Type the field's address in the box at the top left, or tap ◎ to go to where you are.</div>
+    <div class="search-results" id="searchResults" hidden aria-live="polite"></div>
     <div class="map-note map-note-warn" id="tileNote" hidden>The satellite picture can't load here. It shows when the app runs on its own web address.</div>
     <div class="draw-bar" id="drawBar" hidden>
       <span>Tap each corner of the field. <b id="drawCount">0</b> corners.</span>
