@@ -87,7 +87,7 @@ export function sampleJob() {
         legal: 'Example: NE¼ 6-98-58', crop: 'Soybeans', pest: 'Frogeye leaf spot',
       },
       applicator: { name: 'Example Applicator', cert: 'AP-00000', company: 'Example Aerial Spraying', phone: '(605) 555-0100', address: 'Example address, Menno SD' },
-      equipment: { drone: 'Example 40 L spray drone', serial: 'FA-EXAMPLE', swathFt: 23, targetGpa },
+      equipment: { model: 'dji-t50', drone: 'DJI Agras T50 (practice)', serial: 'FA-EXAMPLE', swathFt: 23, targetGpa, tankGal: 10.6, flowGpm: 4.2 },
       products: [
         { name: 'Example fungicide (sample)', common: 'example active ingredient', company: 'Example Chemical Co.', epa: '00000-000', ai: '2.09 lb per gal', rate: '8', unit: 'fl oz', rei: '12', phi: '21' },
         { name: 'Example adjuvant (sample)', common: 'non-ionic surfactant', company: 'Example Adjuvants Inc.', epa: '', ai: '90%', rate: '0.25', unit: 'pt', rei: '', phi: '' },

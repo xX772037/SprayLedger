@@ -373,3 +373,15 @@ dialog::backdrop { background: rgba(10, 15, 12, .55); }
 .search-results .pick b { font-size: 1.05rem; }
 .search-results .pick span { color: var(--muted); font-size: 0.9rem; }
 .search-results .pick:hover { background: var(--surface-2); }
+
+/* plan */
+.plan-card { background: var(--surface); border: 2px solid var(--line); border-radius: var(--r); padding: 1.1rem; display: grid; gap: 0.9rem; }
+.plan-inputs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.9rem; }
+@media (max-width: 720px) { .plan-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.plan-out { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }
+@media (max-width: 720px) { .plan-out { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.plan-out .stat .v { font-size: 1.6rem; }
+.plan-out .warn { grid-column: 1 / -1; margin: 0; padding: 0.7rem 0.9rem; border-radius: 10px; border: 2px solid var(--line); border-left: 6px solid var(--warn); background: var(--surface); }
+.plan-out .sub { grid-column: 1 / -1; }
+.pick-row { display: grid; gap: 0.35rem; }
+.pick-row .sub { font-weight: 400; }

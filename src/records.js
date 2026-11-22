@@ -23,7 +23,7 @@ export function emptyRecord() {
       parcels: '', landowner: '', crop: '', pest: '', acresOverride: '',
     },
     applicator: { name: '', cert: '', company: '', phone: '', address: '' },
-    equipment: { drone: '', serial: '', swathFt: 23, targetGpa: 2 },
+    equipment: { model: '', drone: '', serial: '', swathFt: 23, targetGpa: 2, tankGal: '', flowGpm: '' },
     products: [blankProduct()],
     conditions: { wind: '', windDir: '', temp: '', humidity: '', source: '' },
     notes: '',

@@ -1,11 +1,12 @@
 import { parseFile } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
-import { M_PER_FT, L_PER_GAL, makeProjection } from './geo.js';
+import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
   emptyRecord, normalizeRecord, blankProduct, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
 import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
+import { DRONES, PRODUCTS, PRODUCT_GROUPS, droneById, droneName, planJob, applyCatalogProduct, productsFromJobs, litersToGal, lpmToGpm } from './catalog.js';
 import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent } from './store.js';
 import { sampleJob } from './sample.js';
 import { FieldMap } from './map.js';
@@ -678,19 +679,47 @@ function renderNotices() {
 
 function fillForm() {
   document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
-  $('swath').value = state.rec.equipment.swathFt;
+  $('f_model').value = state.rec.equipment.model || '';
+  if (!state.live) $('liveBoom').value = state.rec.equipment.swathFt || 90;
   const s = state.rec.summary;
   $('f_acres').placeholder = s ? fmt(s.acresTreated, 2) + ' from GPS' : '';
   $('f_gal').placeholder = s?.volumeGal != null ? fmt(s.volumeGal, 1) + ' from GPS' : '';
   renderProducts();
 }
 
+function productOptions() {
+  const mine = productsFromJobs(state.records);
+  const opt = (v, t) => `<option value="${v}">${esc(t)}</option>`;
+  return opt('', 'Choose a product…')
+    + (mine.length ? `<optgroup label="Used on your jobs">${mine.map((p, k) => opt(`j:${k}`, p.name)).join('')}</optgroup>` : '')
+    + PRODUCT_GROUPS.map(g => `<optgroup label="${g}s">${PRODUCTS.map((p, k) => (p.group === g ? opt(`c:${k}`, p.name) : '')).join('')}</optgroup>`).join('');
+}
+
+function pickProduct(i, value) {
+  if (!value) return;
+  const [kind, k] = value.split(':');
+  const cur = state.rec.products[i];
+  if (kind === 'c') state.rec.products[i] = applyCatalogProduct(cur, PRODUCTS[+k]);
+  else {
+    // a product from the applicator's own jobs: bring back everything they entered, rate included
+    const mine = productsFromJobs(state.records)[+k];
+    state.rec.products[i] = { ...blankProduct(), ...mine, fromList: true };
+  }
+  markDirty();
+  renderProducts();
+  $(`p${i}_rate`).focus();
+}
+
 function renderProducts() {
-  const unitOpts = sel => UNITS.map(u => `<option value="${u}"${u === sel ? ' selected' : ''}>${u} per acre</option>`).join('');
+  const unitOpts = sel => UNITS.map(u => `<option value="${u}"${u === sel ? ' selected' : ''}>${u}</option>`).join('');
   const many = state.rec.products.length > 1;
   $('products').innerHTML = state.rec.products.map((p, i) => `
     <section class="product" data-i="${i}" aria-label="Product ${i + 1}">
       <div class="product-head"><h3>Product ${i + 1}</h3>${many ? `<button type="button" class="btn" data-remove="${i}">Remove</button>` : ''}</div>
+      <label class="pick-row">Pick from the list
+        <select id="p${i}_pick" data-pick="${i}">${productOptions()}</select>
+        <span class="sub">${p.fromList ? 'Filled in from the list. Check the label for the rate, the pre-harvest days and anything left blank.' : 'Or type it in below.'}</span>
+      </label>
       <div class="grid2">
         <label>Product name (trade name) <input id="p${i}_name" data-prod="name" value="${esc(p.name)}"></label>
         <label>Common name (active ingredient) <input id="p${i}_common" data-prod="common" value="${esc(p.common)}"></label>
@@ -699,7 +728,7 @@ function renderProducts() {
       </div>
       <div class="grid4">
         <label>Rate <input id="p${i}_rate" data-prod="rate" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rate)}"></label>
-        <label>Unit <select id="p${i}_unit" data-prod="unit">${unitOpts(p.unit)}</select></label>
+        <label>Unit, per acre <select id="p${i}_unit" data-prod="unit">${unitOpts(p.unit)}</select></label>
         <label>Re-entry, hours <input id="p${i}_rei" data-prod="rei" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rei)}"></label>
         <label>Pre-harvest, days <input id="p${i}_phi" data-prod="phi" type="number" step="1" min="0" inputmode="numeric" value="${esc(p.phi)}"></label>
       </div>
@@ -712,6 +741,35 @@ function renderProducts() {
   refreshDerived();
 }
 
+function fieldAcres() {
+  if (state.analysis?.hasBoundary) return state.rec.summary.fieldAcres;
+  if (!state.boundary.length) return NaN;
+  const r0 = state.boundary[0][0];
+  const proj = makeProjection(r0.reduce((t, p) => t + p[0], 0) / r0.length, r0.reduce((t, p) => t + p[1], 0) / r0.length);
+  return boundaryArea(state.boundary.map(p => p.map(r => r.map(([la, lo]) => proj.toXY(la, lo))))) / M2_PER_ACRE;
+}
+
+function renderPlan() {
+  const e = state.rec.equipment, d = droneById(e.model);
+  $('droneSpec').textContent = d ? `${droneName(d)}: ${d.spec}` : 'Pick yours to fill in the tank, pump and swath. You can change any number.';
+  const gpa = Number(e.targetGpa);
+  $('gpaNote').innerHTML = gpa > 0 ? `Spray volume: <b>${fmt(gpa, 1)} gallons per acre</b>. Change it in step 2, Plan.` : 'Set the gallons per acre in step 2, Plan.';
+  const acres = fieldAcres();
+  const out = $('planOut');
+  if (!(acres > 0)) { out.innerHTML = '<p class="sub">Choose the field in step 1 to see how much spray, how many tank loads and how long the job takes.</p>'; return; }
+  const p = planJob({ acres, gpa, swathFt: Number(e.swathFt), tankGal: Number(e.tankGal), flowGpm: Number(e.flowGpm), maxMph: d?.maxMph || 15 });
+  if (!p) { out.innerHTML = '<p class="sub">Enter the gallons per acre to see the plan.</p>'; return; }
+  const hrs = h => (h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min`);
+  out.innerHTML = [
+    stat('Field', fmt(acres, 1), 'acres', state.rec.job.field || ''),
+    stat('Spray to mix', fmt(p.gallons, 0), 'gal', `${fmt(gpa, 1)} gal per acre`),
+    stat('Tank loads', p.loads ?? '—', '', p.loads ? `${fmt(Number(e.tankGal), 1)} gal tank` : 'Enter the tank size'),
+    stat('About', hrs(p.totalHours), '', p.acPerHour ? `${fmt(p.acPerHour, 0)} acres an hour, refills included` : ''),
+  ].join('') + (p.flowLimited ? `<p class="warn">At ${fmt(gpa, 1)} gal per acre the pump limits you to about ${fmt(p.mph, 1)} mph. Use a narrower swath or more or bigger nozzles to go faster.</p>` : '')
+    + (!(Number(e.flowGpm) > 0) && !d?.ground ? '<p class="warn">Enter the pump flow to check the drone can keep up with this rate.</p>' : '')
+    + '<p class="sub">A rough plan: real times depend on turns, battery swaps and how fast you refill.</p>';
+}
+
 function refreshDerived() {
   const r = state.rec;
   document.querySelectorAll('.product').forEach(el => {
@@ -721,6 +779,7 @@ function refreshDerived() {
     el.querySelector('[data-calc="rate"]').textContent = t && Number.isFinite(t.actualRate) ? `${fmt(t.actualRate, 2)} ${t.unit} per acre` : '—';
   });
 
+  renderPlan();
   const re = reentryTime(r), hv = harvestDate(r);
   const maxOf = k => Math.max(...r.products.map(p => Number(p[k])).filter(Number.isFinite));
   $('intervals').innerHTML = `
@@ -972,7 +1031,7 @@ const shareFiles = (() => {
 // ---------------------------------------------------------------- steps, views and text size
 
 const STEPS = ['field', 'weather', 'spray', 'products', 'finish'];
-const STEP_NAMES = { field: 'Field', weather: 'Weather', spray: 'Spray', products: 'Products', finish: 'Finish' };
+const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Finish' };
 
 function showView(name) {
   $('viewJobs').hidden = name !== 'jobs';
@@ -1013,10 +1072,21 @@ function confirmClick(btn, label, fn) {
   setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = btn.dataset.label; } }, 4000);
 }
 
+let swathTimer;
+function scheduleReanalyze() {
+  clearTimeout(swathTimer);
+  swathTimer = setTimeout(() => { analyze(); renderMap(); renderGaps(); refreshDerived(); }, 300);
+}
+
 function onFieldInput(e) {
   const t = e.target;
   if (t.closest?.('#mapcard')) return;
-  if (t.dataset.path) setPath(state.rec, t.dataset.path, t.value);
+  if (t.dataset.path) {
+    setPath(state.rec, t.dataset.path, t.value);
+    // the same value can show in more than one step: keep the copies in step
+    document.querySelectorAll(`[data-path="${t.dataset.path}"]`).forEach(el => { if (el !== t) el.value = t.value; });
+    if (t.dataset.path === 'equipment.swathFt') scheduleReanalyze();
+  }
   else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.type === 'checkbox' ? t.checked : t.value;
   else return;
   markDirty();
@@ -1024,6 +1094,7 @@ function onFieldInput(e) {
 }
 document.addEventListener('input', onFieldInput);
 document.addEventListener('change', e => { if (e.target.type === 'checkbox' && e.target.dataset.prod) onFieldInput(e); });
+$('products').addEventListener('change', e => { const s = e.target.closest('[data-pick]'); if (s) pickProduct(+s.dataset.pick, s.value); });
 $('products').addEventListener('click', e => {
   const rm = e.target.closest('[data-remove]');
   if (rm) { state.rec.products.splice(+rm.dataset.remove, 1); markDirty(); renderProducts(); }
@@ -1053,19 +1124,34 @@ $('stepNext').addEventListener('click', () => { setStep(STEPS[Math.min(STEPS.len
 $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jobs' : 'job'));
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
+
+// Drone and sprayer pick list
+(() => {
+  const groups = {};
+  for (const d of DRONES) (groups[d.make || 'Other'] ??= []).push(d);
+  $('f_model').innerHTML = '<option value="">Choose…</option>' + Object.entries(groups)
+    .map(([make, ds]) => `<optgroup label="${esc(make)}">${ds.map(d => `<option value="${d.id}">${esc(droneName(d))}</option>`).join('')}</optgroup>`).join('');
+})();
+$('f_model').addEventListener('change', e => {
+  const d = droneById(e.target.value), eq = state.rec.equipment;
+  eq.model = e.target.value;
+  if (d) {
+    // keep a name the applicator typed; replace one that came from this list
+    const fromList = !eq.drone || DRONES.some(x => droneName(x) === eq.drone || eq.drone.startsWith(droneName(x)));
+    if (!d.ground && d.id !== 'other') eq.drone = droneName(d);
+    else if (fromList) eq.drone = d.ground ? 'Ground sprayer' : '';
+    eq.swathFt = d.swathFt;
+    eq.tankGal = d.tankL != null ? +litersToGal(d.tankL).toFixed(1) : '';
+    eq.flowGpm = d.flowLpm != null ? +lpmToGpm(d.flowLpm).toFixed(2) : '';
+  }
+  markDirty(); fillForm(); scheduleReanalyze();
+});
 $('btnDelete').addEventListener('click', e => confirmClick(e.currentTarget, 'Confirm delete', async () => {
   await deleteRecord(state.rec.id);
   newRecord(state.rec);
   showView('jobs');
 }));
 
-let swathTimer;
-$('swath').addEventListener('input', e => {
-  state.rec.equipment.swathFt = e.target.value;
-  markDirty();
-  clearTimeout(swathTimer);
-  swathTimer = setTimeout(() => { analyze(); renderMap(); renderGaps(); refreshDerived(); }, 250);
-});
 
 $('fileInput').addEventListener('change', e => { importFiles(e.target.files); e.target.value = ''; });
 const dz = $('dropzone');

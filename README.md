@@ -22,6 +22,13 @@ On top of that:
 
 - **Land owners (South Dakota).** Parcel lines with owner names on the map for Hutchinson, Hanson, Davison, Douglas, Charles Mix, Bon Homme, Turner and Yankton counties, from the county parcel layers that Planning & Development District III publishes. Tap a parcel to see its owner, parcel number, acreage, legal description and mailing address, and to **use it as the field boundary** (or add it to the field). Once a field is set, the **Land owners** panel shows the field's owner and the owners of land **downwind** within ¼, ½ or 1 mile, with mailing addresses to copy for drift notices. Type an **address** in the box on the map (for example `41255 277th St`) and the app finds the parcel in county records. If the house number isn't on record, it lists the nearest addresses on that road. Picking a parcel fills in the parcel number, land owner and legal description (section-township-range). Parcel number and land owner are saved on the record and in the CSV. McCook County isn't on District III's server (it uses Schneider Beacon).
 
+## Picking equipment and products
+
+- **Plan step: drone or sprayer.** Pick from DJI Agras T100, T70P, T50, T25, XAG P100 Pro, Hylio AG-272 and AG-230, or choose Ground sprayer or Other. The tank size, pump flow and a starting swath fill in, and any of them can be changed. The plan then shows the spray to mix, tank loads and a rough time for the field, and warns when the pump can't keep up with the rate.
+- **Products step: pick list.** Common herbicides, fungicides, insecticides and adjuvants, plus every product used on your saved jobs. Picking one fills in the trade name, active ingredient, company, EPA Reg. No., restricted-use flag and, where confirmed, the a.i. per unit and REI. Rate and pre-harvest days are never filled from the list because they depend on crop and pest; products from your own jobs bring back your rates.
+
+Specs and label facts live in `src/catalog.js`, each checked against the maker's spec page or the EPA-stamped label in November 2026. Anything that couldn't be confirmed is left blank for the applicator to copy from the label. Edit that file to add the drones and products you use.
+
 ## Built for easy reading
 
 The app walks through a job in five steps (**Field → Weather → Spray → Products → Finish**), one screen at a time. Text is at least 18px in Atkinson Hyperlegible, a typeface designed for low vision, with contrast of 7:1 or better. Buttons are at least 56px tall. The **AA** button makes everything bigger, in three sizes.
@@ -63,7 +70,7 @@ It is a static site with no build step and no dependencies.
 
 ```sh
 npm start      # serves on http://localhost:8080
-npm test       # 45 unit tests (parsers, coverage engine, product math, SD record check, CSV, weather rules, NMEA, parcels, address search)
+npm test       # 50 unit tests (parsers, coverage engine, product math, SD record check, CSV, weather rules, NMEA, parcels, address search, catalog and job plan)
 ```
 
 ### Put it online (GitHub Pages)
@@ -89,6 +96,7 @@ src/map.js        satellite map (Leaflet) and overlays
 src/weather.js    forecast, Delta T, inversion risk, go/no-go rating, drift and downwind edges
 src/live.js       live tracking: device GPS, USB NMEA receivers, simulation
 src/parcels.js    county parcel layers (District III), owner lookup, downwind neighbours
+src/catalog.js    drone specs, product label facts, job planning math
 src/config.js     map imagery, weather service and spray limits
 src/docs.js       customer report and SD application record (PDF)
 vendor/leaflet/   Leaflet 1.9.4 (BSD-2-Clause)
