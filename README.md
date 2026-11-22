@@ -20,6 +20,8 @@ On top of that:
 
   A finished live track becomes the record's track like an imported log. Live tracks have no flow data, so enter gallons from the sprayer controller.
 
+- **Land owners (South Dakota).** Parcel lines with owner names on the map for Hutchinson, Hanson, Davison, Douglas, Charles Mix, Bon Homme, Turner and Yankton counties, from the county parcel layers that Planning & Development District III publishes. Tap a parcel to see its owner, parcel number, acreage, legal description and mailing address, and to **use it as the field boundary** (or add it to the field). Once a field is set, the **Land owners** panel shows the field's owner and the owners of land **downwind** within ¼, ½ or 1 mile, with mailing addresses to copy for drift notices. Parcel number and land owner are saved on the record and in the CSV. McCook County isn't on District III's server (it uses Schneider Beacon).
+
 Records can be saved, exported as CSV (one row per product, ready for a spreadsheet or a customer), and printed as a one-page application report with the coverage map and a signature line.
 
 It opens with a simulated sample job: a 40-acre fungicide application with a clogged nozzle and some GPS drift.
@@ -29,6 +31,7 @@ It opens with a simulated sample job: a 40-acre fungicide application with a clo
 - **Drone live telemetry.** Drones are covered by importing their flight log after each flight. Live drone position needs each manufacturer's cloud or SDK integration (for example a DJI Cloud API partnership, or MAVLink for ArduPilot/PX4-based sprayers).
 - **Boom on/off from the sprayer.** In the cab the operator taps the boom button. Reading boom state automatically needs a connection to the rate controller or ISOBUS.
 - **Real log files.** The importers are generic; test with real exports from the drones your customers fly.
+- **Parcel data terms.** District III's services carry no license text. Before charging customers for the owner lookup, get District III's written OK (Planning & Development District III, 1808 Summit St, Yankton). Owner data is public record but can lag recent sales.
 - **Service plans.** The satellite imagery (Esri) and weather (Open-Meteo) used here are free for non-commercial use. For a paid product, switch to keyed commercial plans in `src/config.js`.
 
 ## Supported files
@@ -49,7 +52,7 @@ It is a static site with no build step and no dependencies.
 
 ```sh
 npm start      # serves on http://localhost:8080
-npm test       # 33 unit tests (parsers, coverage engine, product math, compliance, CSV, weather rules, NMEA)
+npm test       # 39 unit tests (parsers, coverage engine, product math, compliance, CSV, weather rules, NMEA, parcels)
 ```
 
 ### Put it online (GitHub Pages)
@@ -74,6 +77,7 @@ src/store.js      IndexedDB storage
 src/map.js        satellite map (Leaflet) and overlays
 src/weather.js    forecast, Delta T, inversion risk, go/no-go rating, drift and downwind edges
 src/live.js       live tracking: device GPS, USB NMEA receivers, simulation
+src/parcels.js    county parcel layers (District III), owner lookup, downwind neighbours
 src/config.js     map imagery, weather service and spray limits
 vendor/leaflet/   Leaflet 1.9.4 (BSD-2-Clause)
 src/sample.js     simulated sample job

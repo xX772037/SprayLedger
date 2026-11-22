@@ -133,13 +133,28 @@
           <li><i class="sw sw-ovl"></i>Sprayed twice</li>
           <li><i class="sw sw-off"></i>Off target</li>
           <li><i class="sw sw-dw"></i>Downwind edge</li>
+          <li><i class="sw sw-nb"></i>Downwind neighbour</li>
+          <li><i class="sw sw-pl"></i>Parcel line</li>
         </ul>
         <label class="check"><input type="checkbox" id="showTrack"> Flight path</label>
+        <label class="check"><input type="checkbox" id="showParcels" checked> Parcels and owners</label>
+        <span class="probe" id="parcelHint" aria-live="polite"></span>
         <span class="probe" id="probe" aria-live="polite"></span>
       </div>
     </section>
 
     <section class="stats" id="stats" aria-label="Coverage summary"></section>
+
+    <section class="panel owners" id="ownersPanel" aria-label="Land owners">
+      <div class="owners-head">
+        <h3>Land owners</h3>
+        <label class="inline-field" for="nbDist">Neighbours within
+          <select id="nbDist"><option value="402">¼ mile</option><option value="805">½ mile</option><option value="1609">1 mile</option></select>
+        </label>
+        <button type="button" class="btn btn-small" id="ownersRefresh">Look up</button>
+      </div>
+      <div id="owners"><p class="sub">Set a field boundary to see who owns the field and the land around it. Tap any parcel on the map to see its owner.</p></div>
+    </section>
 
     <section class="twocol">
       <div class="panel">
@@ -171,12 +186,14 @@
         </div>
         <label>Farm or customer <input id="f_farm" data-path="job.farm"></label>
         <label>Field <input id="f_field" data-path="job.field"></label>
+        <label>Parcel no(s). <input id="f_parcels" data-path="job.parcels"></label>
+        <label>Land owner <input id="f_landowner" data-path="job.landowner"></label>
         <label>Crop or site <input id="f_crop" data-path="job.crop" list="crops"></label>
         <label>Target pest <input id="f_pest" data-path="job.pest"></label>
         <label>Acres treated <input id="f_acres" data-path="job.acresOverride" type="number" step="0.01" inputmode="decimal"></label>
         <label>Gallons sprayed <input id="f_gal" data-path="volumeGalOverride" type="number" step="0.1" inputmode="decimal"></label>
       </div>
-      <p class="hint">Acres and gallons come from the flight log. Type a value only to override it.</p>
+      <p class="hint">Acres and gallons come from the flight log, and parcel and owner from county records where available. Type a value only to override it.</p>
     </fieldset>
 
     <fieldset>

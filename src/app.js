@@ -11,6 +11,7 @@ import { FieldMap } from './map.js';
 import { fetchForecast, fetchConditionsAt, assessHour, sprayWindows, downwindEdges, compass16 } from './weather.js';
 import { DeviceGPS, SerialGPS, SimulatedRig, LiveSession } from './live.js';
 import { SPRAY_LIMITS } from './config.js';
+import { PARCEL_SOURCES, PARCEL_ATTRIBUTION, NOT_COVERED_NEARBY, queryParcels, sourcesFor, neighbourZone, classifyParcels, downwindEdgesLL } from './parcels.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,6 +34,8 @@ const state = {
   wx: null,
   wxLoading: false,
   wxError: null,
+  parcelsView: { abort: null, list: [] },
+  owners: { key: null },
 };
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
@@ -133,6 +136,7 @@ function ensureMap() {
     },
     onMove: probe,
     onTileStatus: s => { $('tileNote').hidden = s !== 'blocked'; },
+    onMoveEnd: scheduleViewParcels,
   });
   return fmap;
 }
@@ -177,7 +181,9 @@ function renderMap() {
   if (!m) return;
   $('map').classList.toggle('drawing', !!state.draw);
   m.setAnalysis(a, a ? coverageImage(a) : null, { showTrack: $('showTrack').checked, fit: state.fitPending && !state.live });
-  if (a) state.fitPending = false;
+  m.setPlanBoundary(!a && state.boundary.length ? state.boundary : null, { fit: state.fitPending && !state.live });
+  if (a || state.boundary.length) state.fitPending = false;
+  $('mapEmpty').hidden = !!a || !!state.live || state.boundary.length > 0;
   renderDownwind();
 }
 
@@ -199,6 +205,10 @@ function probe([lat, lon]) {
 
 function wxLocation() {
   if (state.analysis) return [state.analysis.proj.lat0, state.analysis.proj.lon0];
+  if (state.boundary.length) {
+    const r = state.boundary[0][0];
+    return [r.reduce((s, p) => s + p[0], 0) / r.length, r.reduce((s, p) => s + p[1], 0) / r.length];
+  }
   const f = state.live?.session.last;
   return f ? [f.lat, f.lon] : null;
 }
@@ -221,7 +231,7 @@ async function loadWeather(force = false) {
     state.wxError = e.message;
   }
   state.wxLoading = false;
-  renderWeather(); renderDownwind();
+  renderWeather(); renderDownwind(); lookupOwners();
 }
 
 /** Clearly labelled example data for when the weather service can't be reached (e.g. in a preview). */
@@ -306,16 +316,151 @@ function renderWeather() {
       </div>`).join('')}
     </div>
     <p class="wx-windows">${wins.length ? `Spray windows: ${wins.map(w => `<b>${dayTime(w.start)}–${new Date(w.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</b>`).join(' · ')}` : 'No good spray window in the forecast. Bars show wind in mph; hover a bar for the reasons.'}</p>
-    ${state.analysis?.hasBoundary ? `<p class="wx-drift">Drift moves toward the <b>${compass16(toward)}</b>. The field edges facing that way are marked on the map: keep your buffer there and check what lies downwind (sensitive crops, homes, water, bee yards). Start on the downwind side and work upwind so the rig stays out of its own drift.</p>` : ''}
+    ${state.boundary.length ? `<p class="wx-drift">Drift moves toward the <b>${compass16(toward)}</b>. The field edges facing that way are marked on the map: keep your buffer there and check what lies downwind (sensitive crops, homes, water, bee yards). Start on the downwind side and work upwind so the rig stays out of its own drift.</p>` : ''}
     <p class="wx-note">Ratings use wind ${SPRAY_LIMITS.windMinMph}–${SPRAY_LIMITS.windMaxMph} mph, gusts under ${SPRAY_LIMITS.gustMaxMph} mph and Delta T ${SPRAY_LIMITS.deltaTMinF}–${SPRAY_LIMITS.deltaTMaxF}°F. Forecast wind is for 33 ft above ground. The product label is the legal limit: if it is stricter, follow the label.</p>`;
 }
 
 function renderDownwind() {
   if (!fmap) return;
   const a = state.analysis, now = wxNow();
-  if (!a?.hasBoundary || !now || now.wind < 1) { fmap.setDownwind([]); return; }
-  const { edges, towardDeg } = downwindEdges(a.polys, now.dir);
-  fmap.setDownwind(edges.map(e => e.map(([x, y]) => a.proj.toLatLon(x, y))), `Downwind edge: drift goes ${compass16(towardDeg)} today`);
+  if (!now || now.wind < 1 || !state.boundary.length) { fmap.setDownwind([]); return; }
+  const label = `Downwind edge: drift goes ${compass16((now.dir + 180) % 360)} today`;
+  if (a?.hasBoundary) {
+    const { edges } = downwindEdges(a.polys, now.dir);
+    fmap.setDownwind(edges.map(e => e.map(([x, y]) => a.proj.toLatLon(x, y))), label);
+  } else {
+    fmap.setDownwind(downwindEdgesLL(state.boundary, now.dir), label);
+  }
+}
+
+// ---------------------------------------------------------------- parcels and owners
+
+const COVERED = PARCEL_SOURCES.map(s => s.county).join(', ');
+const feetOrMiles = m => (m / M_PER_FT < 1000 ? `${fmt(m / M_PER_FT, 0)} ft` : `${fmt(m / 1609.344, 2)} mi`);
+const distLabel = () => $('nbDist').selectedOptions[0].textContent;
+let parcelTimer;
+
+function scheduleViewParcels() { clearTimeout(parcelTimer); parcelTimer = setTimeout(loadViewParcels, 350); }
+function setParcelHint(t) { $('parcelHint').textContent = t; }
+
+async function loadViewParcels() {
+  if (!fmap) return;
+  const pv = state.parcelsView;
+  pv.abort?.abort();
+  const on = $('showParcels').checked;
+  if (!on || fmap.zoom() < 14) {
+    pv.list = []; fmap.setParcels([]);
+    setParcelHint(on ? 'Zoom in to see parcel lines' : '');
+    return;
+  }
+  const box = fmap.viewBox();
+  if (!sourcesFor(box).length) { pv.list = []; fmap.setParcels([]); setParcelHint('No county parcel data for this area'); return; }
+  const ctl = new AbortController(); pv.abort = ctl;
+  setParcelHint('Loading parcels…');
+  try {
+    const r = await queryParcels({ bbox: box }, { signal: ctl.signal });
+    pv.list = r.parcels;
+    fmap.setParcels(r.parcels, { interactive: !state.draw, onPick: showParcel, attribution: PARCEL_ATTRIBUTION });
+    if (r.errors.length && !r.parcels.length) setParcelHint(`Parcel data unavailable${embedded ? ': this preview blocks outside data' : ''}`);
+    else if (r.errors.length) setParcelHint(`No parcel data from ${r.errors.map(e => e.county).join(', ')} right now`);
+    else setParcelHint(`${r.parcels.length} parcels · tap one for the owner`);
+  } catch (e) {
+    if (e.name !== 'AbortError') setParcelHint('Parcel data unavailable');
+  }
+}
+
+function showParcel(p, ll) {
+  const el = document.createElement('div');
+  el.className = 'parcel-pop';
+  el.innerHTML = `<b>${esc(p.owner || 'Owner not listed')}</b>
+    <span>${esc(p.county)} County · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 2)} ac` : ''}</span>
+    ${p.legal ? `<span class="muted">${esc(p.legal)}</span>` : ''}
+    ${p.mailing ? `<span class="muted">${esc(p.mailing)}</span>` : ''}
+    <div class="row"><button type="button" class="primary" data-a="use">Use as field boundary</button>${state.boundary.length ? '<button type="button" data-a="add">Add to field</button>' : ''}</div>`;
+  el.addEventListener('click', e => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (!a) return;
+    fmap.closePopup();
+    useParcel(p, a === 'add');
+  });
+  fmap.popup(ll, el);
+}
+
+function useParcel(p, add) {
+  const j = state.rec.job;
+  const uniq = (list, sep) => [...new Set(list.filter(Boolean))].join(sep);
+  if (add) {
+    state.boundary = [...state.boundary, ...p.polygons];
+    j.parcels = uniq([...String(j.parcels || '').split(/,\s*/), p.parcel], ', ');
+    j.landowner = uniq([...String(j.landowner || '').split(/;\s*/), p.owner], '; ');
+  } else {
+    state.boundary = p.polygons.map(poly => poly.map(r => r.slice()));
+    j.parcels = p.parcel; j.landowner = p.owner;
+  }
+  state.notices = state.notices.filter(n => !/boundary/i.test(n.text));
+  state.notices.push({ text: `Field boundary ${add ? 'extended with' : 'set from'} ${p.county} County parcel ${p.parcel || ''}. County parcel lines follow legal descriptions, so trim it with Redraw boundary if the sprayed area is smaller (waterways, farmstead, road ditches).` });
+  state.fitPending = !add;
+  state.owners.key = null;
+  syncLog(); analyze(); markDirty(); renderAll();
+}
+
+async function lookupOwners(force = false) {
+  const el = $('owners');
+  if (!state.boundary.length) {
+    state.owners = { key: null };
+    el.innerHTML = `<p class="sub">Set a field boundary to see who owns the field and the land around it. Tap any parcel on the map to see its owner. County records cover ${COVERED} counties.</p>`;
+    fmap?.setOwnerHighlights();
+    return;
+  }
+  const now = wxNow();
+  const dir = now && now.wind >= 1 ? now.dir : null;
+  const dist = Number($('nbDist').value);
+  const key = JSON.stringify([state.boundary.length, state.boundary[0][0].length, state.boundary[0][0][0], dir == null ? null : Math.round(dir / 10), dist]);
+  if (!force && key === state.owners.key) return;
+  state.owners.key = key;
+  const zone = neighbourZone(state.boundary, dir, dist);
+  const rings = [...state.boundary.map(p => p[0]), ...zone.rings];
+  const pts = rings.flat();
+  const box = [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
+  if (!sourcesFor(box).length) {
+    el.innerHTML = `<p class="sub">Owner lookup covers ${COVERED} counties in South Dakota. This field is outside them. Not yet covered nearby: ${NOT_COVERED_NEARBY.join('; ')}.</p>`;
+    fmap?.setOwnerHighlights();
+    return;
+  }
+  el.innerHTML = '<p class="sub">Looking up county records…</p>';
+  let r;
+  try { r = await queryParcels({ rings }); }
+  catch (e) { r = { parcels: [], errors: [{ county: '', message: e.message }] }; }
+  if (key !== state.owners.key) return; // a newer lookup started
+  if (!r.parcels.length && r.errors.length) {
+    el.innerHTML = `<p class="sub">County records couldn't be reached${embedded ? ': this preview blocks outside data. It works when the app runs on its own web address' : ` (${esc(r.errors[0].message)})`}.</p>`;
+    return;
+  }
+  const c = classifyParcels(r.parcels, zone);
+  Object.assign(state.owners, { field: c.field, neighbours: c.neighbours, zone });
+  fmap?.setOwnerHighlights(c.field, c.neighbours);
+
+  const j = state.rec.job;
+  if (c.field.length && !j.parcels && !j.landowner) {
+    j.parcels = [...new Set(c.field.map(p => p.parcel).filter(Boolean))].join(', ');
+    j.landowner = [...new Set(c.field.map(p => p.owner).filter(Boolean))].join('; ');
+    fillForm(); markDirty();
+  }
+  const fieldOwners = [...new Set(c.field.map(p => p.owner || 'Owner not listed'))];
+  const fieldAc = c.field.reduce((s, p) => s + (p.acres || 0), 0);
+  el.innerHTML = `
+    ${c.field.length ? `<div class="owner-field"><span class="sub">This field, from county records</span><b>${esc(fieldOwners.join('; '))}</b>
+      <span>${c.field.map(p => `${esc(p.county)} ${esc(p.parcel || '?')}`).join(', ')}${fieldAc ? ` · ${fmt(fieldAc, 1)} deeded ac` : ''}</span></div>`
+      : '<p class="sub">No parcel centre falls inside this boundary; tap the field on the map to see its parcel.</p>'}
+    <p class="sub">${zone.downwind ? `Downwind of the field (drift goes ${compass16(zone.towardDeg)}), within ${distLabel()}:` : `All around the field within ${distLabel()} (load the weather to narrow this to the downwind side):`}</p>
+    ${c.neighbours.length ? `<ol class="nb-list">${c.neighbours.slice(0, 25).map(g => `
+      <li><div><div class="who">${esc(g.owner || 'Owner not listed')}</div>
+        <div class="meta">${g.parcels.length} parcel${g.parcels.length > 1 ? 's' : ''}${g.acres ? ` · ${fmt(g.acres, 1)} ac` : ''} · ${g.distM < 15 ? 'borders the field' : `${feetOrMiles(g.distM)} from the field edge`}</div>
+        ${g.mailing ? `<div class="addr">${esc(g.mailing)}</div>` : ''}</div>
+        <button type="button" class="btn copy btn-small" data-copy="${esc([g.owner, g.mailing].filter(Boolean).join('\n'))}">Copy</button></li>`).join('')}</ol>`
+      : '<p class="sub">No other parcels in that area.</p>'}
+    ${r.errors.length ? `<p class="sub">No data from ${esc(r.errors.map(e => e.county).join(', '))} right now.</p>` : ''}
+    <p class="sub">Source: county Directors of Equalization, via Planning &amp; Development District III. Public record; it can lag recent sales, so confirm with the county before relying on it.</p>`;
 }
 
 // ---------------------------------------------------------------- live tracking
@@ -343,7 +488,7 @@ async function startLive() {
       state.notices = [{ text: 'No field boundary yet, so the simulation drives the sample field.' }];
       state.fitPending = true;
     }
-    source = new SimulatedRig({ boundary: state.boundary, swathM, speedMph: 10, speedup: 15 });
+    source = new SimulatedRig({ boundary: state.boundary, swathM, speedMph: 10, speedup: 20 });
   }
   state.rec.equipment.swathFt = boomFt; $('swath').value = boomFt;
   state.points = [];
@@ -587,6 +732,7 @@ function cancelLive() {
 
 function loadRecord(rec) {
   cancelLive();
+  state.owners.key = null;
   state.fitPending = true;
   state.rec = structuredClone(rec);
   state.points = rec.log?.points ? unpackPoints(rec.log.points) : [];
@@ -601,6 +747,7 @@ function loadRecord(rec) {
 
 function newRecord(seed) {
   cancelLive();
+  state.owners.key = null;
   state.fitPending = true;
   const r = emptyRecord();
   if (seed) {
@@ -617,6 +764,7 @@ function newRecord(seed) {
 
 function loadSample() {
   cancelLive();
+  state.owners.key = null;
   state.fitPending = true;
   setTab('log');
   const j = sampleJob();
@@ -647,6 +795,7 @@ function renderAll() {
   renderMap();
   refreshList();
   loadWeather();
+  lookupOwners();
 }
 
 // ---------------------------------------------------------------- export & print
@@ -691,6 +840,7 @@ function buildReport() {
     <h2>Application</h2>
     <div class="kv">
       ${kv('Farm or customer', r.job.farm)}${kv('Field', r.job.field)}${kv('Crop or site', r.job.crop)}
+      ${kv('Parcel no(s).', r.job.parcels)}${kv('Land owner', r.job.landowner)}${kv('County records', r.job.parcels ? 'Director of Equalization' : '')}
       ${kv('Date', r.job.date)}${kv('Start – end', r.job.start && `${r.job.start} – ${r.job.end}`)}${kv('Target pest', r.job.pest)}
       ${kv('Location (centre)', s.lat != null ? `${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}` : '')}${kv('Acres treated', fmt(ac, 2))}${kv('Field acres', s.hasBoundary ? fmt(s.fieldAcres, 2) : '')}
       ${kv('Spray volume', Number.isFinite(gal) ? `${fmt(gal, 1)} gal (${fmt(gal / ac, 2)} gal/ac)` : '')}${kv('Coverage', s.coveragePct != null ? `${fmt(s.coveragePct, 1)}% · skipped ${fmt(s.skipAcres, 2)} ac` : '')}${kv('Off target', s.hasBoundary ? `${fmt(s.offTargetAcres, 2)} ac` : '')}
@@ -790,17 +940,25 @@ $('exportCopy').addEventListener('click', () => copyText($('exportText').value, 
 $('exportDownload').addEventListener('click', downloadCSV);
 
 $('showTrack').addEventListener('change', renderMap);
+$('showParcels').addEventListener('change', loadViewParcels);
+$('nbDist').addEventListener('change', () => lookupOwners(true));
+$('ownersRefresh').addEventListener('click', () => lookupOwners(true));
+$('owners').addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  copyText(b.dataset.copy, b);
+  setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+});
 $('map').addEventListener('pointerleave', () => { $('probe').textContent = ''; });
 
 // Drawing a boundary on the map
 $('btnDraw').addEventListener('click', () => {
   state.draw = { pts: [] };
   $('drawBar').hidden = false; $('drawCount').textContent = '0';
-  if (fmap) fmap.follow = false;
+  if (fmap) { fmap.follow = false; fmap.setParcels(state.parcelsView.list, { interactive: false }); }
   renderMap();
 });
 $('drawUndo').addEventListener('click', () => { state.draw?.pts.pop(); $('drawCount').textContent = state.draw?.pts.length ?? 0; fmap?.setDraft(state.draw?.pts); });
-$('drawCancel').addEventListener('click', () => { state.draw = null; $('drawBar').hidden = true; fmap?.setDraft(null); renderMap(); });
+$('drawCancel').addEventListener('click', () => { state.draw = null; $('drawBar').hidden = true; fmap?.setDraft(null); renderMap(); loadViewParcels(); });
 $('drawDone').addEventListener('click', () => {
   const pts = state.draw?.pts || [];
   if (pts.length < 3) { $('drawCount').textContent = `${pts.length} (need at least 3)`; return; }
@@ -808,7 +966,8 @@ $('drawDone').addEventListener('click', () => {
   state.draw = null; $('drawBar').hidden = true; fmap?.setDraft(null);
   state.notices = state.notices.filter(n => !/boundary/i.test(n.text));
   state.fitPending = true;
-  syncLog(); analyze(); markDirty(); renderAll();
+  state.owners.key = null;
+  syncLog(); analyze(); markDirty(); renderAll(); loadViewParcels();
 });
 
 // Weather

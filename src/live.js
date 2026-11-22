@@ -140,13 +140,20 @@ export class SimulatedRig {
     const v = this.speedMph * 0.44704, dt = 1;            // 1 Hz like most receivers
     const path = [];
     let pass = 0;
-    for (let y = y0 + this.swathM / 2; y < y1; y += this.swathM * 0.97, pass++) {
+    for (let y = y0 + this.swathM / 2; y < y1; y += this.swathM * 0.97) {
+      // Like an operator: drive only across the field on each pass, with a short turn-around margin.
+      let a = null, z = null;
+      for (let x = x0; x <= x1; x += 1) if (pointInBoundary(x, y, polys)) { a ??= x; z = x; }
+      if (a === null) continue;
       const fwd = pass % 2 === 0;
-      for (let k = 0; k <= (x1 - x0) / (v * dt); k++) {
-        const x = fwd ? x0 + k * v * dt : x1 - k * v * dt;
+      const [s0, s1] = [a - 12, z + 12];
+      for (let k = 0; k <= (s1 - s0) / (v * dt); k++) {
+        const x = fwd ? s0 + k * v * dt : s1 - k * v * dt;
         const inField = pointInBoundary(x, y, polys);
-        path.push({ x, y, spray: inField && !(pass === this.skipPass && x > x0 + (x1 - x0) * 0.35 && x < x0 + (x1 - x0) * 0.6), heading: fwd ? 90 : 270 });
+        const clog = pass === this.skipPass && x > a + (z - a) * 0.35 && x < a + (z - a) * 0.6;
+        path.push({ x, y, spray: inField && !clog, heading: fwd ? 90 : 270 });
       }
+      pass++;
     }
     let i = 0, t = Date.now();
     this.timer = setInterval(() => {

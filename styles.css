@@ -178,6 +178,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .sw-cov { background: var(--cov); } .sw-ovl { background: var(--ovl); } .sw-skip { background: var(--skip); } .sw-off { background: var(--off); }
 .sw-dw { background: #ffb000; height: 5px; border-radius: 1px; }
+.sw-nb { background: rgba(255,138,61,.45); border: 1.5px solid #ff8a3d; }
+.sw-pl { background: none; border: 1.5px solid #e0b800; }
 .check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .probe { margin-left: auto; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -335,3 +337,25 @@ dialog::backdrop { background: rgba(10, 15, 12, .45); }
 .chip.go { color: var(--ok); } .chip.caution { color: var(--warn); } .chip.no { color: var(--bad); }
 .chip:empty { display: none; }
 .wx-fill { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Land owners */
+.owners-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.owners-head h3 { margin-right: auto; }
+.owners-head select { width: auto; min-height: 30px; padding: 2px 6px; }
+.owner-field { display: grid; gap: 2px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border-left: 3px solid #4fd1ff; font-size: 13px; }
+.owner-field b { font-size: 14px; }
+.nb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: nb; }
+.nb-list li { counter-increment: nb; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.nb-list li::before { content: counter(nb); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #ff8a3d; color: #1a1a1a; font: 600 11px var(--mono); }
+.nb-list .who { font-weight: 600; overflow-wrap: anywhere; }
+.nb-list .meta, .nb-list .addr { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.parcel-pop { display: grid; gap: 4px; font: 13px/1.4 var(--body); color: #1b1f1c; }
+.parcel-pop b { font-size: 14px; }
+.parcel-pop .muted { color: #5a6460; font-size: 12px; }
+.parcel-pop .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.parcel-pop button { font: 600 12px var(--body); padding: 6px 9px; border-radius: 6px; border: 1px solid #23603f; background: #fff; color: #23603f; cursor: pointer; }
+.parcel-pop button.primary { background: #23603f; color: #fff; }
+
+.goto-ctl { display: flex; background: #fff; }
+.goto-ctl input { width: 150px; min-height: 30px; border: 0; border-radius: 0; background: #fff; color: #222; padding: 4px 8px; font: 13px var(--body); }
+.goto-ctl button { border: 0; border-left: 1px solid #ccc; background: #fff; color: #222; font: 600 12px var(--body); padding: 0 9px; cursor: pointer; }

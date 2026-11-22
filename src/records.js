@@ -7,7 +7,7 @@ export function emptyRecord() {
     id: (globalThis.crypto?.randomUUID?.() ?? String(Date.now()) + Math.random().toString(16).slice(2)),
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    job: { date: '', start: '', end: '', farm: '', field: '', crop: '', pest: '', acresOverride: '' },
+    job: { date: '', start: '', end: '', farm: '', field: '', parcels: '', landowner: '', crop: '', pest: '', acresOverride: '' },
     applicator: { name: '', cert: '', company: '' },
     equipment: { drone: '', serial: '', swathFt: 23, targetGpa: 2 },
     products: [{ name: '', epa: '', rate: '', unit: 'fl oz', rei: '', phi: '' }],
@@ -111,7 +111,7 @@ export function fmtDate(d) {
 // ---------- CSV export: one row per product per application ----------
 
 const CSV_COLUMNS = [
-  'Date', 'Start', 'End', 'Farm / customer', 'Field', 'Latitude', 'Longitude', 'Crop / site', 'Target pest',
+  'Date', 'Start', 'End', 'Farm / customer', 'Field', 'Parcel no(s).', 'Land owner', 'Latitude', 'Longitude', 'Crop / site', 'Target pest',
   'Acres treated', 'Field acres', 'Coverage %', 'Skipped acres', 'Overlap acres', 'Off-target acres',
   'Product', 'EPA Reg. No.', 'Label rate', 'Rate unit', 'Total product applied', 'Actual rate / ac', 'Amount basis',
   'Spray volume (gal)', 'Spray volume (gal/ac)', 'REI (h)', 'Re-entry allowed', 'PHI (days)', 'Harvest not before',
@@ -134,7 +134,7 @@ export function recordsToCSV(records) {
     for (const p of prods) {
       const t = productTotals(p, r);
       lines.push([
-        r.job.date, r.job.start, r.job.end, r.job.farm, r.job.field,
+        r.job.date, r.job.start, r.job.end, r.job.farm, r.job.field, r.job.parcels ?? '', r.job.landowner ?? '',
         s.lat?.toFixed(6) ?? '', s.lon?.toFixed(6) ?? '', r.job.crop, r.job.pest,
         fmtN(ac, 2), fmtN(s.fieldAcres, 2), fmtN(s.coveragePct, 1), fmtN(s.skipAcres, 2), fmtN(s.overlapAcres, 2), fmtN(s.offTargetAcres, 2),
         p.name, p.epa, p.rate, p.unit ? `${p.unit}/ac` : '', t ? fmtN(t.total, 2) + ' ' + t.unit : '', t ? fmtN(t.actualRate, 2) : '',

@@ -6,7 +6,7 @@ import { BASEMAPS } from './config.js';
 const L = () => window.L;
 
 export class FieldMap {
-  constructor(el, { onClick, onMove, onTileStatus } = {}) {
+  constructor(el, { onClick, onMove, onTileStatus, onMoveEnd } = {}) {
     const Lf = L();
     this.map = Lf.map(el, { zoomSnap: 0.25, zoomControl: true, attributionControl: true, maxZoom: 21 }).setView([39.5, -96], 4);
     this.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
@@ -31,8 +31,12 @@ export class FieldMap {
       gaps: Lf.layerGroup().addTo(this.map),
       wind: Lf.layerGroup().addTo(this.map),
       draft: Lf.layerGroup().addTo(this.map),
+      parcels: Lf.layerGroup().addTo(this.map),
+      owners: Lf.layerGroup().addTo(this.map),
+      plan: Lf.layerGroup().addTo(this.map),
       live: Lf.layerGroup().addTo(this.map),
     };
+    this.map.on('moveend', () => onMoveEnd?.());
     this.map.on('click', e => onClick?.([e.latlng.lat, e.latlng.lng]));
     this.map.on('mousemove', e => onMove?.([e.latlng.lat, e.latlng.lng]));
     this.map.on('dragstart', () => { this.follow = false; });
@@ -48,6 +52,35 @@ export class FieldMap {
       },
     });
     new Ctl({ position: 'topright' }).addTo(this.map);
+
+    // "Go to": coordinates pasted from a customer, or this device's location.
+    const Go = Lf.Control.extend({
+      onAdd: () => {
+        const f = Lf.DomUtil.create('form', 'leaflet-bar goto-ctl');
+        f.innerHTML = '<input id="gotoInput" type="text" inputmode="decimal" placeholder="Go to lat, lon" aria-label="Go to latitude, longitude"><button type="submit" aria-label="Go">Go</button><button type="button" data-me aria-label="My location">◎</button>';
+        Lf.DomEvent.disableClickPropagation(f); Lf.DomEvent.disableScrollPropagation(f);
+        const input = f.querySelector('input');
+        f.addEventListener('submit', e => {
+          e.preventDefault();
+          const m = input.value.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+          if (!m) { input.setCustomValidity('Enter latitude, longitude, e.g. 43.33, -97.75'); input.reportValidity(); return; }
+          input.setCustomValidity('');
+          let [la, lo] = [parseFloat(m[1]), parseFloat(m[2])];
+          if (Math.abs(la) > 90 && Math.abs(lo) <= 90) [la, lo] = [lo, la];
+          this.follow = false;
+          this.map.setView([la, lo], 16);
+        });
+        f.querySelector('[data-me]').addEventListener('click', () => {
+          navigator.geolocation?.getCurrentPosition(
+            p => { this.follow = false; this.map.setView([p.coords.latitude, p.coords.longitude], 16); },
+            () => { input.value = ''; input.placeholder = 'Location not available'; },
+            { enableHighAccuracy: true, timeout: 10000 },
+          );
+        });
+        return f;
+      },
+    });
+    new Go({ position: 'topleft' }).addTo(this.map);
     this.follow = true;
   }
 
@@ -130,3 +163,49 @@ export class FieldMap {
     }
   }
 }
+
+// ---- parcels and planning (added to the class below)
+Object.assign(FieldMap.prototype, {
+  viewBox() {
+    const b = this.map.getBounds();
+    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+  },
+  zoom() { return this.map.getZoom(); },
+
+  /** Parcel lines; tapping one calls onPick(parcel, [lat, lon]). */
+  setParcels(parcels, { interactive = true, onPick, attribution } = {}) {
+    const Lf = L();
+    this.layers.parcels.clearLayers();
+    if (attribution && !this.parcelAttr) { this.map.attributionControl.addAttribution(attribution); this.parcelAttr = true; }
+    for (const p of parcels || []) {
+      Lf.polygon(p.polygons, { color: '#ffe066', weight: 1.3, opacity: 0.9, fill: true, fillOpacity: 0.01, interactive })
+        .on('click', e => { Lf.DomEvent.stopPropagation(e); onPick?.(p, [e.latlng.lat, e.latlng.lng]); })
+        .addTo(this.layers.parcels);
+    }
+  },
+
+  /** Field parcels outlined; neighbouring owners' parcels tinted, labelled with the owner. */
+  setOwnerHighlights(fieldParcels = [], neighbourGroups = []) {
+    const Lf = L();
+    this.layers.owners.clearLayers();
+    for (const p of fieldParcels) Lf.polygon(p.polygons, { color: '#4fd1ff', weight: 2, dashArray: '5 4', fill: false, interactive: false }).addTo(this.layers.owners);
+    neighbourGroups.forEach((g, i) => g.parcels.forEach(p => {
+      Lf.polygon(p.polygons, { color: '#ff8a3d', weight: 1.5, fillColor: '#ff8a3d', fillOpacity: 0.22, interactive: true })
+        .bindTooltip(`${i + 1}. ${g.owner || 'Owner not listed'}`, { sticky: true })
+        .addTo(this.layers.owners);
+    }));
+  },
+
+  /** A field boundary on its own, before anything has been sprayed. */
+  setPlanBoundary(boundaryLL, { fit = false } = {}) {
+    const Lf = L();
+    this.layers.plan.clearLayers();
+    if (!boundaryLL?.length) return;
+    const poly = Lf.polygon(boundaryLL, { color: '#ffffff', weight: 2.5, fillColor: '#e03030', fillOpacity: 0.18, interactive: false }).addTo(this.layers.plan);
+    this.bounds = poly.getBounds();
+    if (fit) this.fit();
+  },
+
+  popup(latlng, el) { L().popup({ maxWidth: 300, autoPanPadding: [20, 20] }).setLatLng(latlng).setContent(el).openOn(this.map); },
+  closePopup() { this.map.closePopup(); },
+});
