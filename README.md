@@ -20,7 +20,7 @@ On top of that:
 
   A finished live track becomes the record's track like an imported log. Live tracks have no flow data, so enter gallons from the sprayer controller.
 
-- **Land owners (South Dakota).** Parcel lines with owner names on the map for Hutchinson, Hanson, Davison, Douglas, Charles Mix, Bon Homme, Turner and Yankton counties, from the county parcel layers that Planning & Development District III publishes. Tap a parcel to see its owner, parcel number, acreage, legal description and mailing address, and to **use it as the field boundary** (or add it to the field). Once a field is set, the **Land owners** panel shows the field's owner and the owners of land **downwind** within ¼, ½ or 1 mile, with mailing addresses to copy for drift notices. Parcel number and land owner are saved on the record and in the CSV. McCook County isn't on District III's server (it uses Schneider Beacon).
+- **Land owners (South Dakota).** Parcel lines with owner names on the map for Hutchinson, Hanson, Davison, Douglas, Charles Mix, Bon Homme, Turner and Yankton counties, from the county parcel layers that Planning & Development District III publishes. Tap a parcel to see its owner, parcel number, acreage, legal description and mailing address, and to **use it as the field boundary** (or add it to the field). Once a field is set, the **Land owners** panel shows the field's owner and the owners of land **downwind** within ¼, ½ or 1 mile, with mailing addresses to copy for drift notices. Type an **address** in the box on the map (for example `41255 277th St`) and the app finds the parcel in county records. If the house number isn't on record, it lists the nearest addresses on that road. Picking a parcel fills in the parcel number, land owner and legal description (section-township-range). Parcel number and land owner are saved on the record and in the CSV. McCook County isn't on District III's server (it uses Schneider Beacon).
 
 ## Built for easy reading
 
@@ -63,7 +63,7 @@ It is a static site with no build step and no dependencies.
 
 ```sh
 npm start      # serves on http://localhost:8080
-npm test       # 41 unit tests (parsers, coverage engine, product math, SD record check, CSV, weather rules, NMEA, parcels)
+npm test       # 45 unit tests (parsers, coverage engine, product math, SD record check, CSV, weather rules, NMEA, parcels, address search)
 ```
 
 ### Put it online (GitHub Pages)
