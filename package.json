@@ -1,0 +1,12 @@
+{
+  "name": "sprayledger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spray drone application records: coverage, amounts applied and compliance, from flight logs.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes http-server -p 8080 -c-1 ."
+  },
+  "license": "MIT"
+}
