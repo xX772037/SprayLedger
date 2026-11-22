@@ -1,0 +1,478 @@
+<title>Aurora Field Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed WebGL night sky; an instrument panel docked bottom-left, a heading/elevation readout top-right.
+   Deliberately single-theme: this is a night sky, so it stays dark on any host. */
+:root {
+  --night: #05070d;
+  --panel: rgba(7, 11, 20, 0.74);
+  --line: rgba(150, 205, 190, 0.16);
+  --ink: #e4eee8;
+  --dim: #8ea39f;
+  --o557: #63f29a;   /* oxygen green, 557.7 nm */
+  --o630: #ff5d6c;   /* oxygen red, 630.0 nm */
+  --n428: #a184ff;   /* nitrogen ion violet, 427.8 nm */
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--night); color: var(--ink); font-family: var(--body); overflow: hidden; }
+#sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#sky:active { cursor: grabbing; }
+
+.brand {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: max(16px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+  display: grid; gap: 2px;
+}
+.brand h1 {
+  margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(22px, 3.2vw, 34px);
+  letter-spacing: -0.02em; line-height: 1; text-shadow: 0 2px 18px rgba(0,0,0,.6);
+}
+.brand p { margin: 0; color: var(--dim); font-size: 13px; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+
+.hud {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  right: max(16px, env(safe-area-inset-right, 0px));
+  font-family: var(--mono); font-size: 12px; color: var(--dim);
+  display: grid; gap: 3px; justify-items: end; pointer-events: none;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0,0,0,.9);
+}
+.hud b { color: var(--ink); font-weight: 500; }
+
+.panel {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: min(352px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  padding: 16px;
+  display: grid; gap: 14px;
+}
+.storm { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.kp-big { font-family: var(--display); font-weight: 700; font-size: 44px; line-height: .9; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.kp-big small { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--dim); letter-spacing: 0; margin-right: 6px; }
+.gscale { text-align: right; display: grid; gap: 2px; }
+.gscale .g { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); justify-self: end; }
+.gscale .g[data-level="0"] { color: var(--dim); }
+.gscale .g[data-level="1"], .gscale .g[data-level="2"] { color: var(--o557); border-color: color-mix(in srgb, var(--o557) 40%, transparent); }
+.gscale .g[data-level="3"], .gscale .g[data-level="4"] { color: #ffc46b; border-color: rgba(255,196,107,.4); }
+.gscale .g[data-level="5"] { color: var(--o630); border-color: color-mix(in srgb, var(--o630) 45%, transparent); }
+.gscale span { font-size: 12px; color: var(--dim); }
+
+.ctrl { display: grid; gap: 6px; }
+.ctrl label { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); letter-spacing: .04em; text-transform: uppercase; }
+.ctrl label output { font-family: var(--mono); color: var(--ink); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--o557); margin: 0; height: 22px; }
+input[type="range"]:focus-visible, button:focus-visible { outline: 2px solid var(--o557); outline-offset: 2px; }
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+button {
+  font: 500 12px/1 var(--body); color: var(--ink); background: rgba(255,255,255,.05);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer;
+}
+button:hover { background: rgba(255,255,255,.1); }
+button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--o557) 55%, transparent); color: var(--o557); }
+
+.lines { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.line { display: grid; grid-template-columns: 10px 64px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+.line i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 10px currentColor; background: currentColor; }
+.line code { font-family: var(--mono); color: var(--ink); font-size: 12px; }
+.hint { font-size: 12px; color: var(--dim); margin: 0; }
+
+.toggle-panel { display: none; }
+@media (max-width: 560px) {
+  .panel { gap: 12px; padding: 14px; }
+  .panel.collapsed > :not(.storm):not(.toggle-row) { display: none; }
+  .toggle-panel { display: inline-block; }
+  .kp-big { font-size: 36px; }
+  .hud { top: auto; bottom: auto; }
+  .hud { top: calc(env(safe-area-inset-top, 0px) + 72px); }
+}
+.toggle-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--dim); }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }
+</style>
+
+<canvas id="sky" aria-label="Simulated aurora over a mountain lake. Drag to look around."></canvas>
+
+<header class="brand">
+  <h1>Aurora Field Lab</h1>
+  <p>Real-time auroral curtains, ray-traced on your GPU</p>
+</header>
+
+<div class="hud" aria-live="off">
+  <div>heading <b id="hdg">000° N</b></div>
+  <div>elevation <b id="elv">+14°</b></div>
+  <div><span id="fps">— fps</span> · <span id="res">—</span></div>
+</div>
+
+<section class="panel" id="panel" aria-label="Space weather controls">
+  <div class="storm">
+    <div class="kp-big"><small>Kp</small><span id="kpVal">5o</span></div>
+    <div class="gscale">
+      <span class="g" id="gTag" data-level="1">G1</span>
+      <span id="gName">Minor storm</span>
+    </div>
+  </div>
+
+  <div class="toggle-row">
+    <button type="button" class="toggle-panel" id="collapse" aria-expanded="true">Hide controls</button>
+  </div>
+
+  <div class="ctrl">
+    <label for="kp">Planetary K-index <output id="kpOut" for="kp">5.0</output></label>
+    <input type="range" id="kp" min="0" max="9" step="0.3333" value="5">
+  </div>
+  <div class="ctrl">
+    <label for="wind">Solar wind speed <output id="windOut" for="wind">450 km/s</output></label>
+    <input type="range" id="wind" min="250" max="1000" step="10" value="450">
+  </div>
+  <div class="ctrl">
+    <label for="exposure">Camera exposure <output id="expOut" for="exposure">1.0 EV</output></label>
+    <input type="range" id="exposure" min="-2" max="3" step="0.1" value="0">
+  </div>
+
+  <div class="presets" role="group" aria-label="Presets">
+    <button type="button" data-kp="2" data-wind="360">Quiet arc</button>
+    <button type="button" data-kp="6.333" data-wind="620">Substorm</button>
+    <button type="button" data-kp="9" data-wind="950">Carrington-class</button>
+    <button type="button" id="zenith">Look up</button>
+    <button type="button" id="lake" aria-pressed="true">Lake</button>
+    <button type="button" id="pause" aria-pressed="false">Pause</button>
+  </div>
+
+  <div class="lines" aria-label="Emission lines">
+    <div class="line" style="color: var(--o557)"><i></i><code>557.7 nm</code><span>Atomic O, 100–200 km. The familiar green.</span></div>
+    <div class="line" style="color: var(--o630)"><i></i><code>630.0 nm</code><span>Atomic O, 200–400 km. Red tops in strong storms.</span></div>
+    <div class="line" style="color: var(--n428)"><i></i><code>427.8 nm</code><span>N₂⁺, sharp violet-pink lower border.</span></div>
+  </div>
+  <p class="hint">Drag to look around, scroll to zoom. At Kp 8+ the oval moves overhead: press Look up to see the corona.</p>
+</section>
+
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime, uWave, uYaw, uPitch, uFov, uExposure, uLake;
+uniform float uKp, uOval, uSpacing, uAmp, uRed, uBlue, uIntensity;
+uniform vec3  uAmb;
+
+float h11(float n){ return fract(sin(n) * 43758.5453123); }
+float n11(float x){ float i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f); return mix(h11(i), h11(i+1.0), f); }
+float fbm(float x){ float s = 0.0, a = 0.5; for(int i=0;i<4;i++){ s += a*n11(x); x = x*2.07 + 13.7; a *= 0.5; } return s*1.0667 - 0.5; }
+float h31(vec3 p){ p = fract(p*vec3(.1031,.1030,.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x+p.y)*p.z); }
+float h21(vec2 p){ vec3 q = fract(vec3(p.xyx)*.1031); q += dot(q, q.yzx + 33.33); return fract((q.x+q.y)*q.z); }
+
+// Ribbon k is a vertical sheet. Its footprint is the curve z = ribbonZ(x) in km (x = east, z = north).
+float ribbonOffset(float fk){ return fk < 0.5 ? 0.0 : (fk < 1.5 ? 1.0 : (fk < 2.5 ? -1.0 : 2.0)); }
+float ribbonZ(float x, float fk){
+  float ph = fk * 31.7;
+  return uOval + ribbonOffset(fk)*uSpacing
+       + uAmp * 2.0 * fbm(x*0.0018 + ph + uTime*0.025)
+       + uAmp * 0.35 * (n11(x*0.011 - uTime*0.09 + ph) - 0.5) * 2.0;
+}
+
+vec3 aurora(vec3 rd){
+  vec3 acc = vec3(0.0);
+  if (abs(rd.z) < 1e-4) return acc;
+  for (int k = 0; k < 4; k++){
+    float fk = float(k);
+    float wk = clamp(uKp*0.45 - fk*0.8 + 0.6, 0.0, 1.0);
+    if (wk <= 0.0) continue;
+
+    // Solve rd.z*t = ribbonZ(rd.x*t): where does this view ray pierce the sheet? (damped fixed-point iteration)
+    float t = (uOval + ribbonOffset(fk)*uSpacing) / rd.z;
+    for (int i = 0; i < 10; i++) t = mix(t, ribbonZ(rd.x*t, fk) / rd.z, 0.6);
+    if (t <= 0.0 || t > 2600.0) continue;
+
+    float x   = rd.x * t;
+    float zc  = ribbonZ(x, fk);
+    float res = abs(rd.z*t - zc);
+    float conv = exp(-res*res / 60.0);
+
+    // True altitude of the hit, including the drop of Earth's curvature (R = 6371 km).
+    float h  = rd.y*t + t*t/12742.0;
+    float hb = 97.0 + 10.0*n11(x*0.017 + fk*5.0) + 6.0*n11(x*0.06 - uTime*0.2);
+    float dh = h - hb;
+    if (dh < -8.0 || dh > 420.0) continue;
+
+    // Brighter when we look along the sheet: optical path ~ 1/|n·rd|.
+    float slope = (ribbonZ(x + 1.5, fk) - zc) / 1.5;
+    vec2  n2 = normalize(vec2(-slope, 1.0));
+    float path = 1.0 / (abs(n2.x*rd.x + n2.y*rd.z) + 0.3);
+
+    float rays = 0.35 + 0.65*pow(n11(x*0.22 + fk*9.0 + uTime*0.3), 2.0);
+    float fine = exp(-t/700.0);
+    rays *= mix(1.0, 0.55 + 0.9*n11(x*1.3 - uTime*0.8 + fk*3.0), fine);
+    float env   = smoothstep(0.12, 0.75, n11(x*0.0035 + fk*2.3 - uTime*0.015));
+    float pulse = 0.7 + 0.3*n11(x*0.02 + uTime*0.6 + fk);
+
+    float G = smoothstep(-4.0, 1.5, dh) * exp(-max(dh, 0.0) / (26.0 + 5.0*uKp));
+    float B = exp(-pow((dh + 1.0)/5.0, 2.0)) * uBlue;
+    float R = 0.5 * uRed * smoothstep(40.0, 140.0, dh) * exp(-max(dh - 140.0, 0.0)/120.0);
+
+    vec3 c = (G*vec3(0.28, 1.0, 0.46) + B*vec3(0.85, 0.3, 1.0)*1.6) * rays * pulse
+           + R*vec3(1.0, 0.12, 0.2) * (0.6 + 0.4*rays) / path;
+    acc += c * env * wk * conv * path * exp(-t/1400.0);
+  }
+  return acc * uIntensity * 0.55;
+}
+
+float ridge(float a){
+  return 1.4*(0.012 + 0.022*(0.5+0.5*sin(a*2.0+0.7)) + 0.012*(0.5+0.5*sin(a*5.0+1.9))
+       + 0.006*(0.5+0.5*sin(a*11.0+0.3)) + 0.003*sin(a*23.0+2.0) + 0.0015*sin(a*47.0));
+}
+
+vec3 sky(vec3 rd){
+  float y = max(rd.y, 0.0);
+  vec3 col = mix(vec3(0.014, 0.022, 0.042), vec3(0.002, 0.004, 0.013), pow(y, 0.45));
+
+  vec3 q = rd*380.0; vec3 id = floor(q); vec3 f = fract(q) - 0.5;
+  float hs = h31(id);
+  float star = step(0.9965, hs) * smoothstep(0.45, 0.0, length(f));
+  float tw = 0.6 + 0.4*sin(uWave*3.0 + hs*400.0);
+  vec3 sc = mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.85, 1.0), h31(id + 7.0));
+  col += star * tw * sc * 1.6 * smoothstep(0.0, 0.08, y);
+
+  float mw = exp(-pow(dot(rd, normalize(vec3(0.55, 0.35, -0.75)))/0.16, 2.0));
+  col += mw * vec3(0.018, 0.02, 0.03) * (0.6 + 0.8*h31(floor(rd*90.0)));
+
+  col += aurora(rd);
+  col += vec3(0.02, 0.045, 0.03) * exp(-y*14.0) * (0.3 + 0.15*uKp) * uIntensity * 0.4;
+
+  float a = atan(rd.x, rd.z);
+  float m = ridge(a);
+  if (rd.y < m) col = vec3(0.003, 0.005, 0.009) + uAmb*(0.01 + 0.04*smoothstep(m - 0.003, m, rd.y));
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  float cy = cos(uYaw), sy = sin(uYaw), cp = cos(uPitch), sp = sin(uPitch);
+  vec3 fw = vec3(sy*cp, sp, cy*cp);
+  vec3 rt = normalize(vec3(cy, 0.0, -sy));
+  vec3 up = cross(fw, rt);
+  vec3 rd = normalize(fw + (uv.x*rt + uv.y*up) * tan(uFov*0.5) * 2.0);
+
+  vec3 col;
+  if (rd.y >= 0.0) {
+    col = sky(rd);
+  } else if (uLake > 0.5) {
+    float t = 0.03 / (-rd.y);                 // eye 30 m above still water
+    vec2 p = rd.xz * t * 1000.0;              // metres
+    float fade = exp(-t*0.4);
+    vec2 g = vec2(sin(p.x*0.9 + uWave*1.3) + sin(p.x*0.37 - p.y*0.51 + uWave*0.8),
+                  sin(p.y*0.7 + uWave*1.1) + cos(p.x*0.23 + p.y*0.61 - uWave*0.6));
+    vec3 rr = normalize(vec3(rd.x, -rd.y, rd.z) + vec3(g.x, 0.0, g.y)*0.006*fade);
+    rr.y = max(rr.y, 0.0005);
+    float F = 0.02 + 0.98*pow(1.0 + rd.y, 5.0);
+    col = sky(rr) * F * 0.9 + vec3(0.002, 0.004, 0.006);
+  } else {
+    col = vec3(0.02, 0.025, 0.038) + uAmb*0.12*(1.0 + rd.y);
+  }
+
+  col *= exp2(uExposure);
+  col = 1.0 - exp(-col*1.4);
+  col *= 1.0 - 0.35*dot(uv*0.9, uv*0.9);
+  col = pow(max(col, 0.0), vec3(0.4545));
+  col += (h21(gl_FragCoord.xy + fract(uWave)*97.0) - 0.5) / 255.0;
+  gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(() => {
+  const canvas = document.getElementById('sky');
+  const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+  if (!gl) {
+    document.body.insertAdjacentHTML('beforeend', '<div class="fallback">This simulation needs WebGL, which this browser has turned off.</div>');
+    return;
+  }
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, document.getElementById('vs').text));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, document.getElementById('fs').text));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  ['uRes','uTime','uWave','uYaw','uPitch','uFov','uExposure','uLake','uKp','uOval','uSpacing','uAmp','uRed','uBlue','uIntensity','uAmb']
+    .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const S = {
+    kp: 5, wind: 450, ev: 0, yaw: 0, pitch: 0.24, fov: 72 * Math.PI / 180,
+    lake: true, paused: false, sim: 40, wave: 0, scale: 0.75,
+  };
+  const targetView = { yaw: null, pitch: null };
+
+  const $ = id => document.getElementById(id);
+  const kpIn = $('kp'), windIn = $('wind'), expIn = $('exposure');
+
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+  // Kp is reported in thirds: 5-, 5o, 5+.
+  function kpNotation(k) {
+    const third = Math.round(k * 3) / 3, n = Math.round(third), d = third - n;
+    return n + (d > 0.1 ? '+' : d < -0.1 ? '−' : 'o');
+  }
+  // NOAA geomagnetic storm scale.
+  const G = [
+    [0, 'G0', 'Quiet to active'], [1, 'G1', 'Minor storm'], [2, 'G2', 'Moderate storm'],
+    [3, 'G3', 'Strong storm'], [4, 'G4', 'Severe storm'], [5, 'G5', 'Extreme storm'],
+  ];
+  function gLevel(k) { return Math.max(0, Math.min(5, Math.round(k * 3) / 3 >= 4.66 ? Math.round(k) - 4 : 0)); }
+
+  function syncUI() {
+    kpIn.value = S.kp; windIn.value = S.wind; expIn.value = S.ev;
+    $('kpVal').textContent = kpNotation(S.kp);
+    $('kpOut').textContent = S.kp.toFixed(1);
+    $('windOut').textContent = Math.round(S.wind) + ' km/s';
+    $('expOut').textContent = (S.ev >= 0 ? '+' : '') + S.ev.toFixed(1) + ' EV';
+    const g = G[gLevel(S.kp)];
+    $('gTag').textContent = g[1]; $('gTag').dataset.level = g[0]; $('gName').textContent = g[2];
+  }
+
+  kpIn.addEventListener('input', () => { S.kp = +kpIn.value; syncUI(); });
+  windIn.addEventListener('input', () => { S.wind = +windIn.value; syncUI(); });
+  expIn.addEventListener('input', () => { S.ev = +expIn.value; syncUI(); });
+
+  document.querySelectorAll('[data-kp]').forEach(b => b.addEventListener('click', () => {
+    S.kp = +b.dataset.kp; S.wind = +b.dataset.wind; syncUI();
+    targetView.pitch = S.kp >= 8 ? 1.2 : 0.24; targetView.yaw = 0;
+  }));
+  $('zenith').addEventListener('click', () => { targetView.pitch = 1.45; targetView.yaw = S.yaw; });
+  $('lake').addEventListener('click', e => { S.lake = !S.lake; e.currentTarget.setAttribute('aria-pressed', S.lake); });
+  $('pause').addEventListener('click', e => { S.paused = !S.paused; e.currentTarget.setAttribute('aria-pressed', S.paused); e.currentTarget.textContent = S.paused ? 'Resume' : 'Pause'; });
+  $('collapse').addEventListener('click', e => {
+    const p = $('panel'); const c = p.classList.toggle('collapsed');
+    e.currentTarget.textContent = c ? 'Show controls' : 'Hide controls';
+    e.currentTarget.setAttribute('aria-expanded', !c);
+  });
+
+  // Look around: drag (mouse/touch), wheel to zoom, arrow keys.
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); targetView.yaw = targetView.pitch = null; });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const k = S.fov / canvas.clientHeight;
+    S.yaw -= (e.clientX - drag.x) * k; S.pitch += (e.clientY - drag.y) * k;
+    S.pitch = Math.max(-0.7, Math.min(1.55, S.pitch));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  const end = () => { drag = null; };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('wheel', e => { e.preventDefault(); S.fov = Math.max(0.6, Math.min(1.9, S.fov * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+  addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    const step = 0.06;
+    if (e.key === 'ArrowLeft') S.yaw -= step; else if (e.key === 'ArrowRight') S.yaw += step;
+    else if (e.key === 'ArrowUp') S.pitch = Math.min(1.55, S.pitch + step);
+    else if (e.key === 'ArrowDown') S.pitch = Math.max(-0.7, S.pitch - step);
+    else if (e.key === ' ') { $('pause').click(); } else return;
+    e.preventDefault();
+  });
+
+  const compass = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+
+  // Adaptive resolution keeps the frame rate up on slower GPUs.
+  let last = performance.now(), acc = 0, frames = 0, fps = 60, msAvg = 16;
+  function resize() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr * S.scale));
+    const h = Math.max(1, Math.round(canvas.clientHeight * dpr * S.scale));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    msAvg += (dt * 1000 - msAvg) * 0.05;
+    acc += dt; frames++;
+    if (acc > 1) {
+      fps = frames / acc; frames = 0; acc = 0;
+      if (msAvg > 24 && S.scale > 0.35) S.scale = Math.max(0.35, S.scale - 0.1);
+      else if (msAvg < 14 && S.scale < 1) S.scale = Math.min(1, S.scale + 0.05);
+      $('fps').textContent = Math.round(fps) + ' fps';
+      $('res').textContent = canvas.width + '×' + canvas.height;
+    }
+
+    if (!S.paused) {
+      const rate = (S.wind / 450) * (reduceMotion ? 0.3 : 1);
+      S.sim += dt * rate; S.wave += dt;
+    }
+    if (targetView.pitch !== null) {
+      const k = 1 - Math.exp(-dt * 3);
+      S.pitch += (targetView.pitch - S.pitch) * k;
+      S.yaw += (targetView.yaw - S.yaw) * k;
+      if (Math.abs(targetView.pitch - S.pitch) < 0.002) targetView.pitch = targetView.yaw = null;
+    }
+
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    // Map Kp onto the physical picture: the auroral oval expands toward the observer, curtains multiply,
+    // fold harder, and high-altitude red oxygen emission switches on in strong storms.
+    const kp = S.kp;
+    const intensity = 0.2 + kp * 0.22;
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform1f(U.uTime, S.sim);
+    gl.uniform1f(U.uWave, S.wave);
+    gl.uniform1f(U.uYaw, S.yaw);
+    gl.uniform1f(U.uPitch, S.pitch);
+    gl.uniform1f(U.uFov, S.fov);
+    gl.uniform1f(U.uExposure, S.ev);
+    gl.uniform1f(U.uLake, S.lake ? 1 : 0);
+    gl.uniform1f(U.uKp, kp);
+    gl.uniform1f(U.uOval, 780 - kp * 90);          // km north of the observer
+    gl.uniform1f(U.uSpacing, 60 + kp * 14);
+    gl.uniform1f(U.uAmp, 50 + kp * 22);
+    gl.uniform1f(U.uRed, smooth(5, 9, kp) * 1.2);
+    gl.uniform1f(U.uBlue, smooth(5, 9, kp));
+    gl.uniform1f(U.uIntensity, intensity);
+    gl.uniform3f(U.uAmb, 0.12 * intensity, 0.45 * intensity, 0.24 * intensity);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    const deg = ((S.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    $('hdg').textContent = String(Math.round(deg) % 360).padStart(3, '0') + '° ' + compass[Math.round(deg / 22.5) % 16];
+    const el = Math.round(S.pitch * 180 / Math.PI);
+    $('elv').textContent = (el >= 0 ? '+' : '') + el + '°';
+
+    requestAnimationFrame(frame);
+  }
+
+  if (matchMedia('(max-width: 560px)').matches) $('collapse').click();
+  syncUI();
+  requestAnimationFrame(frame);
+})();
+</script>
