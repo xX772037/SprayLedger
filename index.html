@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -38,31 +39,85 @@
 
   <!-- Analysis -->
   <main class="work">
-    <section class="import" id="dropzone" aria-label="Import flight data">
+    <section class="import" id="dropzone" aria-label="Flight data">
       <div class="import-copy">
         <h1 id="jobTitle">New application record</h1>
-        <p>Drop the drone's flight log and the field boundary here. CSV flight logs, KML and GeoJSON are read automatically.</p>
+        <div class="tabs" role="tablist" aria-label="How to record coverage">
+          <button type="button" role="tab" id="tabLog" aria-selected="true" aria-controls="paneLog">Import a log</button>
+          <button type="button" role="tab" id="tabLive" aria-selected="false" aria-controls="paneLive">Track live</button>
+        </div>
       </div>
-      <div class="import-actions">
-        <label class="btn btn-primary file-btn">
-          <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">
-          Choose files
-        </label>
-        <button type="button" class="btn" id="btnDraw" disabled>Draw boundary</button>
-        <label class="inline-field" for="swath">Swath
-          <input id="swath" type="number" min="3" max="60" step="0.5" value="23" inputmode="decimal"> ft
-        </label>
+
+      <div id="paneLog" role="tabpanel" aria-labelledby="tabLog" class="pane">
+        <p class="lead">Drop the drone's flight log and the field boundary here. CSV flight logs, KML and GeoJSON are read automatically.</p>
+        <div class="import-actions">
+          <label class="btn btn-primary file-btn">
+            <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">
+            Choose files
+          </label>
+          <button type="button" class="btn" id="btnDraw" disabled>Draw boundary</button>
+          <label class="inline-field" for="swath">Swath
+            <input id="swath" type="number" min="3" max="150" step="0.5" value="23" inputmode="decimal"> ft
+          </label>
+        </div>
       </div>
+
+      <div id="paneLive" role="tabpanel" aria-labelledby="tabLive" class="pane" hidden>
+        <p class="lead">Paint coverage as you spray. Use a phone or tablet in the cab of a ground rig, a GPS receiver plugged in by USB, or try the simulation.</p>
+        <div class="import-actions">
+          <label class="inline-field" for="liveSource">Position from
+            <select id="liveSource">
+              <option value="device">This device's GPS</option>
+              <option value="serial">USB GPS receiver (NMEA)</option>
+              <option value="sim">Simulated sprayer</option>
+            </select>
+          </label>
+          <label class="inline-field" for="liveBoom">Boom or swath
+            <input id="liveBoom" type="number" min="3" max="150" step="0.5" value="90" inputmode="decimal"> ft
+          </label>
+          <button type="button" class="btn btn-primary" id="liveStart">Start tracking</button>
+          <button type="button" class="btn" id="liveStop" hidden>Stop</button>
+        </div>
+        <div class="live-run" id="liveRun" hidden>
+          <button type="button" class="boom" id="boomSwitch" aria-pressed="false">
+            <span class="boom-state" id="boomState">Boom off</span>
+            <span class="boom-hint">Tap when the sprayer turns on or off</span>
+          </button>
+          <dl class="live-stats">
+            <div><dt>Speed</dt><dd id="lvSpeed">—</dd></div>
+            <div><dt>GPS</dt><dd id="lvAcc">—</dd></div>
+            <div><dt>Sprayed</dt><dd id="lvSprayed">—</dd></div>
+            <div><dt>Field done</dt><dd id="lvPct">—</dd></div>
+            <div><dt>Left to spray</dt><dd id="lvLeft">—</dd></div>
+            <div><dt>Time left</dt><dd id="lvEta">—</dd></div>
+          </dl>
+          <button type="button" class="btn" id="liveSave" disabled>Finish and use as this record's track</button>
+        </div>
+        <p class="hint" id="liveHelp">Phone GPS is good to about 10–15 ft, so coverage gaps narrower than that are guesswork; an RTK receiver on USB is accurate to about an inch. Drones are tracked from their own flight log after each flight: live drone telemetry needs the manufacturer's cloud connection.</p>
+      </div>
+
       <ul class="notices" id="notices"></ul>
       <p class="files" id="files"></p>
     </section>
 
+    <section class="wx" id="wx" aria-label="Spray conditions">
+      <div class="wx-head">
+        <h2>Spray conditions</h2>
+        <span class="chip" id="wxChip"></span>
+        <span class="wx-where" id="wxWhere"></span>
+        <button type="button" class="btn btn-small" id="wxRefresh">Refresh</button>
+      </div>
+      <div id="wxBody" class="wx-body"><p class="hint">Load a field or start tracking to see the wind and spray forecast for that spot.</p></div>
+    </section>
+
     <section class="mapcard" aria-label="Coverage map">
       <div class="map-wrap">
-        <canvas id="map" aria-label="Coverage map of the field"></canvas>
-        <div class="map-empty" id="mapEmpty">
-          <strong>No flight loaded</strong>
-          <span>Import a flight log to map coverage, or load the sample job to see how it works.</span>
+        <div id="map" aria-label="Coverage map of the field"></div>
+        <div class="map-note" id="mapEmpty">
+          <strong>No field loaded.</strong> Import a flight log, start live tracking, or load the sample job.
+        </div>
+        <div class="map-note map-note-warn" id="tileNote" hidden>
+          Satellite imagery can't load here: this preview blocks outside images. It shows when the app runs on its own web address.
         </div>
         <div class="draw-bar" id="drawBar" hidden>
           <span>Click the corners of the field. <b id="drawCount">0</b> points.</span>
@@ -73,10 +128,11 @@
       </div>
       <div class="map-foot">
         <ul class="legend">
-          <li><i class="sw sw-cov"></i>Sprayed once</li>
-          <li><i class="sw sw-ovl"></i>Overlap (2+ passes)</li>
-          <li><i class="sw sw-skip"></i>Skipped</li>
+          <li><i class="sw sw-cov"></i>Sprayed</li>
+          <li><i class="sw sw-skip"></i>Not sprayed</li>
+          <li><i class="sw sw-ovl"></i>Sprayed twice</li>
           <li><i class="sw sw-off"></i>Off target</li>
+          <li><i class="sw sw-dw"></i>Downwind edge</li>
         </ul>
         <label class="check"><input type="checkbox" id="showTrack"> Flight path</label>
         <span class="probe" id="probe" aria-live="polite"></span>
@@ -151,6 +207,10 @@
         <label>Temp, °F <input id="f_temp" data-path="conditions.temp" type="number" step="1" inputmode="decimal"></label>
         <label>Humidity, % <input id="f_hum" data-path="conditions.humidity" type="number" step="1" inputmode="decimal"></label>
       </div>
+      <div class="wx-fill">
+        <button type="button" class="btn btn-small" id="wxFill">Fill from weather records</button>
+        <span class="hint" id="wxFillState">Uses the weather at the field at the application's start time.</span>
+      </div>
       <label>Notes <textarea id="f_notes" data-path="notes" rows="2"></textarea></label>
     </fieldset>
 
@@ -195,6 +255,7 @@
 
 <article id="report" class="report" aria-hidden="true"></article>
 
+<script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="src/app.js"></script>
 </body>
 </html>
