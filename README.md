@@ -22,7 +22,18 @@ On top of that:
 
 - **Land owners (South Dakota).** Parcel lines with owner names on the map for Hutchinson, Hanson, Davison, Douglas, Charles Mix, Bon Homme, Turner and Yankton counties, from the county parcel layers that Planning & Development District III publishes. Tap a parcel to see its owner, parcel number, acreage, legal description and mailing address, and to **use it as the field boundary** (or add it to the field). Once a field is set, the **Land owners** panel shows the field's owner and the owners of land **downwind** within ¼, ½ or 1 mile, with mailing addresses to copy for drift notices. Parcel number and land owner are saved on the record and in the CSV. McCook County isn't on District III's server (it uses Schneider Beacon).
 
-Records can be saved, exported as CSV (one row per product, ready for a spreadsheet or a customer), and printed as a one-page application report with the coverage map and a signature line.
+## Built for easy reading
+
+The app walks through a job in five steps (**Field → Weather → Spray → Products → Finish**), one screen at a time. Text is at least 18px in Atkinson Hyperlegible, a typeface designed for low vision, with contrast of 7:1 or better. Buttons are at least 56px tall. The **AA** button makes everything bigger, in three sizes.
+
+## End-of-job documents (South Dakota)
+
+On the Finish step, two PDFs. On phones, **Send** opens the share menu so the PDF can go by text or email:
+
+- **Customer report:** what was sprayed, the re-entry time and earliest harvest date in a box at the top, rates and totals, weather, the coverage map, and the applicator's contact details. ARSD 12:56:07:04 requires a commercial applicator to give the customer a record on written request.
+- **State application record:** laid out and numbered like the S.D. DANR recordkeeping form, covering the 11 items of ARSD 12:56:07:01. Product totals are in gallons or pounds as the form asks, plus the license number, supporting GPS data and a signature line. Records must be complete by the end of the application day and **kept for 3 years**. They are not filed after each job: the department gets a copy on request (ARSD 12:56:07:02–:03).
+
+The **Record check** on the Finish step lists the 11 state items and jumps to whatever is missing. Jobs can also be exported to a spreadsheet (CSV, one row per product).
 
 It opens with a simulated sample job: a 40-acre fungicide application with a clogged nozzle and some GPS drift.
 
@@ -52,7 +63,7 @@ It is a static site with no build step and no dependencies.
 
 ```sh
 npm start      # serves on http://localhost:8080
-npm test       # 39 unit tests (parsers, coverage engine, product math, compliance, CSV, weather rules, NMEA, parcels)
+npm test       # 41 unit tests (parsers, coverage engine, product math, SD record check, CSV, weather rules, NMEA, parcels)
 ```
 
 ### Put it online (GitHub Pages)
@@ -79,7 +90,9 @@ src/weather.js    forecast, Delta T, inversion risk, go/no-go rating, drift and 
 src/live.js       live tracking: device GPS, USB NMEA receivers, simulation
 src/parcels.js    county parcel layers (District III), owner lookup, downwind neighbours
 src/config.js     map imagery, weather service and spray limits
+src/docs.js       customer report and SD application record (PDF)
 vendor/leaflet/   Leaflet 1.9.4 (BSD-2-Clause)
+vendor/jspdf/     jsPDF 2.5.1 (MIT)
 src/sample.js     simulated sample job
 src/app.js        UI
 test/             node:test unit tests

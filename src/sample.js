@@ -82,14 +82,17 @@ export function sampleJob() {
     fileName: 'sample-agras-flight-2026-06-14.csv',
     boundary,
     record: {
-      job: { farm: 'Example: Lindqvist Farms', field: 'North 40', crop: 'Soybeans', pest: 'Frogeye leaf spot' },
-      applicator: { name: 'Example Applicator', cert: 'IA-00000', company: 'Example Aerial Services' },
+      job: {
+        farm: 'Example: Lindqvist Farms', customerAddress: 'Example address, Olivet SD 57052', field: 'North 40',
+        legal: 'Example: NE¼ 6-98-58', crop: 'Soybeans', pest: 'Frogeye leaf spot',
+      },
+      applicator: { name: 'Example Applicator', cert: 'AP-00000', company: 'Example Aerial Spraying', phone: '(605) 555-0100', address: 'Example address, Menno SD' },
       equipment: { drone: 'Example 40 L spray drone', serial: 'FA-EXAMPLE', swathFt: 23, targetGpa },
       products: [
-        { name: 'Example fungicide (sample)', epa: '00000-000', rate: '8', unit: 'fl oz', rei: '12', phi: '21' },
-        { name: 'Example adjuvant (sample)', epa: '', rate: '0.25', unit: 'pt', rei: '', phi: '' },
+        { name: 'Example fungicide (sample)', common: 'example active ingredient', company: 'Example Chemical Co.', epa: '00000-000', ai: '2.09 lb per gal', rate: '8', unit: 'fl oz', rei: '12', phi: '21' },
+        { name: 'Example adjuvant (sample)', common: 'non-ionic surfactant', company: 'Example Adjuvants Inc.', epa: '', ai: '90%', rate: '0.25', unit: 'pt', rei: '', phi: '' },
       ],
-      conditions: { wind: '6', windDir: 'SW', temp: '68', humidity: '74' },
+      conditions: { wind: '6', windDir: 'SW', temp: '68', humidity: '74', source: 'Measured on site (example)' },
       notes: 'Sample data for demonstration. Nozzle clogged mid-pass during flight 3, cleared at refill. GPS drift on one pass in flight 5.',
     },
   };

@@ -1,10 +1,11 @@
 import { parseFile } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
-import { M_PER_FT, L_PER_GAL } from './geo.js';
+import { M_PER_FT, L_PER_GAL, makeProjection } from './geo.js';
 import {
-  emptyRecord, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
+  emptyRecord, normalizeRecord, blankProduct, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
+import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
 import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent } from './store.js';
 import { sampleJob } from './sample.js';
 import { FieldMap } from './map.js';
@@ -267,17 +268,17 @@ const dayTime = t => {
 function renderWeather() {
   const body = $('wxBody'), chip = $('wxChip'), where = $('wxWhere');
   $('wxRefresh').hidden = !wxLocation();
-  if (state.wxLoading) { body.innerHTML = '<p class="hint">Getting the forecast for this field…</p>'; chip.textContent = ''; return; }
+  if (state.wxLoading) { body.innerHTML = '<p class="sub">Getting the forecast for this field…</p>'; chip.textContent = ''; return; }
   if (state.wxError) {
     chip.textContent = ''; where.textContent = '';
-    body.innerHTML = `<p class="hint">${esc(state.wxError)}</p><div><button type="button" class="btn btn-small" id="wxExample">Show an example forecast</button></div>`;
+    body.innerHTML = `<p class="sub">${esc(state.wxError)}</p><div><button type="button" class="btn" id="wxExample">Show an example forecast</button></div>`;
     $('wxExample').addEventListener('click', exampleWeather);
     return;
   }
   const now = wxNow();
-  if (!now) { chip.textContent = ''; where.textContent = ''; body.innerHTML = '<p class="hint">Load a field or start tracking to see the wind and spray forecast for that spot.</p>'; return; }
+  if (!now) { chip.textContent = ''; where.textContent = ''; body.innerHTML = '<p class="sub">Choose the field first (step 1). The forecast is for that spot.</p>'; return; }
 
-  const label = { go: 'Good to spray', caution: 'Spray with caution', no: 'Don’t spray now' }[now.status];
+  const label = { go: 'Yes, good to spray', caution: 'Spray with care', no: 'No, don’t spray now' }[now.status];
   chip.className = `chip ${now.status}`; chip.textContent = label;
   where.textContent = state.wx.example
     ? 'Example data, not real weather'
@@ -310,14 +311,15 @@ function renderWeather() {
         <ul class="wx-reasons">${now.reasons.length ? now.reasons.map(r => `<li data-level="${r.level}">${esc(r.text)}</li>`).join('') : '<li data-level="0">Wind, Delta T, inversion risk and rain are all within the limits.</li>'}</ul>
       </div>
     </div>
+    <p class="wx-key"><span><i style="background:#17703f"></i>Good</span><span><i style="background:#a86400"></i>Careful</span><span><i style="background:#b02525"></i>Don't spray</span><span>Number = wind in mph · arrow = where drift goes</span></p>
     <div class="hours" role="list" aria-label="Next 24 hours">${upcoming.map(h => `
       <div class="hour${h === now ? ' now' : ''}" role="listitem" title="${esc(`${dayTime(h.t)}: ${Math.round(h.wind)} mph from ${compass16(h.dir)}, gusts ${Math.round(h.gust)}. ${h.reasons.map(r => r.text).join('. ') || 'Within limits.'}`)}">
         <span class="bar" data-s="${h.status}">${Math.round(h.wind)}</span>${arrowSvg((h.dir + 180) % 360)}<span class="t">${hourLabel(h.t)}</span>
       </div>`).join('')}
     </div>
-    <p class="wx-windows">${wins.length ? `Spray windows: ${wins.map(w => `<b>${dayTime(w.start)}–${new Date(w.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</b>`).join(' · ')}` : 'No good spray window in the forecast. Bars show wind in mph; hover a bar for the reasons.'}</p>
-    ${state.boundary.length ? `<p class="wx-drift">Drift moves toward the <b>${compass16(toward)}</b>. The field edges facing that way are marked on the map: keep your buffer there and check what lies downwind (sensitive crops, homes, water, bee yards). Start on the downwind side and work upwind so the rig stays out of its own drift.</p>` : ''}
-    <p class="wx-note">Ratings use wind ${SPRAY_LIMITS.windMinMph}–${SPRAY_LIMITS.windMaxMph} mph, gusts under ${SPRAY_LIMITS.gustMaxMph} mph and Delta T ${SPRAY_LIMITS.deltaTMinF}–${SPRAY_LIMITS.deltaTMaxF}°F. Forecast wind is for 33 ft above ground. The product label is the legal limit: if it is stricter, follow the label.</p>`;
+    <p class="wx-windows">${wins.length ? `Best times to spray: ${wins.map(w => `<b>${dayTime(w.start)} to ${new Date(w.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</b>`).join(', ')}` : 'No good time to spray in the forecast.'}</p>
+    ${state.boundary.length ? `<p class="wx-drift">Drift goes toward the <b>${compass16(toward)}</b>. The field edges on that side are marked in gold on the map. Keep a buffer there and check what's downwind: sensitive crops, homes, water, bee yards. Start on the downwind side and work into the wind.</p>` : ''}
+    <p class="wx-note">Good means wind ${SPRAY_LIMITS.windMinMph}–${SPRAY_LIMITS.windMaxMph} mph, gusts under ${SPRAY_LIMITS.gustMaxMph} mph, no inversion, no rain coming and air not too dry. Forecast wind is at 33 ft. The product label is the law: if it says less wind, go by the label.</p>`;
 }
 
 function renderDownwind() {
@@ -585,27 +587,29 @@ function stat(k, v, unit, d, tone) {
 function renderStats() {
   const s = state.rec.summary, a = state.analysis;
   if (!s || !a) {
-    $('stats').innerHTML = ['Field area', 'Coverage', 'Skipped', 'Overlap', 'Off target', 'Applied', 'Actual rate', 'Spray time']
-      .map(k => stat(k, '—', '', 'Needs a flight log')).join('');
+    $('stats').innerHTML = '<p class="sub">Load the flight log or track the job live, and the results show here.</p>';
     return;
   }
-  const nb = !s.hasBoundary;
-  const needB = 'Add a field boundary';
-  const cov = s.coveragePct;
+  const nb = !s.hasBoundary, cov = s.coveragePct;
   const gal = volumeGal(state.rec), ac = acresTreated(state.rec);
   const gpa = gal / ac, tgt = Number(state.rec.equipment.targetGpa);
   const dev = Number.isFinite(gpa) && tgt > 0 ? (gpa / tgt - 1) * 100 : NaN;
-  const patches = bigGaps(a).length;
-  $('stats').innerHTML = [
-    stat('Field area', nb ? '—' : fmt(s.fieldAcres, 2), nb ? '' : 'ac', nb ? 'No boundary: draw or import one to find skips' : `${state.rec.job.field || 'Boundary'}`),
-    stat('Coverage', nb ? '—' : fmt(cov, 1), nb ? '' : '%', nb ? needB : `${fmt(s.acresTreated, 2)} ac sprayed in field`, nb ? '' : cov >= 98 ? 'ok' : cov >= 93 ? 'warn' : 'bad'),
-    stat('Skipped', nb ? '—' : fmt(s.skipAcres, 2), nb ? '' : 'ac', nb ? needB : patches ? `${patches} patch${patches > 1 ? 'es' : ''} to check` : 'No patches over 0.005 ac', nb ? '' : s.skipAcres > 0.25 ? 'warn' : 'ok'),
-    stat('Overlap', nb ? fmt(s.overlapAcres, 2) : fmt(s.overlapAcres, 2), 'ac', nb ? 'Sprayed twice or more' : `${fmt(a.stats.overlapPct, 1)}% of the field got 2+ passes`),
-    stat('Off target', nb ? '—' : fmt(s.offTargetAcres, 2), nb ? '' : 'ac', nb ? needB : 'Sprayed outside the boundary', nb ? '' : s.offTargetAcres > 0.1 ? 'warn' : ''),
-    stat('Applied', fmt(gal, 1), Number.isFinite(gal) ? 'gal' : '', state.rec.volumeGalOverride ? 'Entered by hand' : s.volumeGal == null ? 'No flow data in the log: enter gallons' : 'Measured from pump flow'),
-    stat('Actual rate', fmt(gpa, 2), Number.isFinite(gpa) ? 'gal/ac' : '', tgt > 0 ? `Target ${fmt(tgt, 1)}${Number.isFinite(dev) ? ` (${dev >= 0 ? '+' : ''}${fmt(dev, 0)}%)` : ''}` : 'Set a target spray volume', Number.isFinite(dev) ? (Math.abs(dev) > 10 ? 'warn' : 'ok') : ''),
-    stat('Spray time', fmt(s.sprayMinutes, 0), 'min', `${s.flights} flight${s.flights !== 1 ? 's' : ''} · ${hhmm(new Date(s.start))}–${hhmm(new Date(s.end))}`),
-  ].join('');
+  const tiles = [
+    stat('Field done', nb ? '—' : fmt(cov, 1), nb ? '' : '%', nb ? 'Choose the field to see this' : `of ${fmt(s.fieldAcres, 1)} acres`, nb ? '' : cov >= 98 ? 'ok' : cov >= 93 ? 'warn' : 'bad'),
+    stat('Acres sprayed', fmt(ac, 1), 'ac', `${s.flights} flight${s.flights !== 1 ? 's' : ''}, ${fmt(s.sprayMinutes, 0)} min`),
+    stat('Gallons', fmt(gal, 1), Number.isFinite(gal) ? 'gal' : '', state.rec.volumeGalOverride ? 'Typed in by hand' : s.volumeGal == null ? 'Not in the log: type it in at Finish' : 'From the pump'),
+    stat('Gallons per acre', fmt(gpa, 2), '', tgt > 0 ? `Aimed for ${fmt(tgt, 1)}${Number.isFinite(dev) ? ` (${dev >= 0 ? '+' : ''}${fmt(dev, 0)}%)` : ''}` : '', Number.isFinite(dev) ? (Math.abs(dev) > 10 ? 'warn' : 'ok') : ''),
+  ];
+  const findings = [];
+  if (!nb) {
+    const n = bigGaps(a).length;
+    if (s.skipAcres >= 0.05) findings.push({ text: `${fmt(s.skipAcres, 2)} acres were missed${n ? ` (${n} spot${n > 1 ? 's' : ''}, numbered on the map)` : ''}.` });
+    if (s.offTargetAcres >= 0.05) findings.push({ text: `${fmt(s.offTargetAcres, 2)} acres were sprayed outside the field.` });
+    if (s.overlapAcres >= 0.5) findings.push({ text: `${fmt(s.overlapAcres, 1)} acres got sprayed twice.` });
+    if (!findings.length) findings.push({ ok: true, text: 'No missed spots or spray outside the field worth noting.' });
+  }
+  if (Number.isFinite(dev) && Math.abs(dev) > 10) findings.push({ text: `The rate came out ${fmt(Math.abs(dev), 0)}% ${dev > 0 ? 'over' : 'under'} what you aimed for.` });
+  $('stats').innerHTML = `<div class="stat-row">${tiles.join('')}</div>${findings.length ? `<ul class="findings">${findings.map(f => `<li class="${f.ok ? 'ok' : ''}">${f.text}</li>`).join('')}</ul>` : ''}`;
 }
 
 function renderGaps() {
@@ -614,10 +618,10 @@ function renderGaps() {
   if (!a) { el.innerHTML = '<li class="none">Import a flight log to find unsprayed patches.</li>'; return; }
   if (!a.hasBoundary) { el.innerHTML = '<li class="none">Add a field boundary to find unsprayed patches.</li>'; return; }
   const gs = bigGaps(a);
-  if (!gs.length) { el.innerHTML = '<li class="none">No unsprayed patches larger than 0.005 ac.</li>'; return; }
+  if (!gs.length) { el.innerHTML = '<li class="none">No missed spots larger than a few square yards.</li>'; return; }
   el.innerHTML = gs.map(g => {
     const c = `${g.lat.toFixed(6)}, ${g.lon.toFixed(6)}`;
-    return `<li><span><span class="ac">${fmt(acres(g.areaM2), 3)} ac</span> <span class="coord">${c}</span></span><button type="button" class="btn copy" data-copy="${c}">Copy</button></li>`;
+    return `<li><span><b>${fmt(acres(g.areaM2), 2)} acres</b><br><span class="coord">${c}</span></span><button type="button" class="btn copy" data-copy="${c}">Copy location</button></li>`;
   }).join('');
 }
 
@@ -634,38 +638,45 @@ function renderFlights() {
 function renderNotices() {
   $('notices').innerHTML = state.notices.map(n => `<li class="${n.err ? 'err' : ''}">${esc(n.text)}</li>`).join('');
   const files = state.rec.sourceFiles || [];
-  $('files').textContent = files.length ? `Source: ${files.join(', ')}` : '';
-  $('btnDraw').disabled = !state.analysis;
-  $('btnDraw').textContent = state.boundary.length ? 'Redraw boundary' : 'Draw boundary';
+  $('files').textContent = files.length ? `Loaded: ${files.join(', ')}` : '';
+  $('btnDraw').textContent = state.boundary.length ? 'Redraw the field' : 'Draw the field';
 }
 
 // ---------------------------------------------------------------- form
 
 function fillForm() {
-  document.querySelectorAll('#form [data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
+  document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
   $('swath').value = state.rec.equipment.swathFt;
   const s = state.rec.summary;
-  $('f_acres').placeholder = s ? fmt(s.acresTreated, 2) + ' from log' : '';
-  $('f_gal').placeholder = s?.volumeGal != null ? fmt(s.volumeGal, 1) + ' from log' : '';
+  $('f_acres').placeholder = s ? fmt(s.acresTreated, 2) + ' from GPS' : '';
+  $('f_gal').placeholder = s?.volumeGal != null ? fmt(s.volumeGal, 1) + ' from GPS' : '';
   renderProducts();
 }
 
 function renderProducts() {
-  const unitOpts = sel => UNITS.map(u => `<option value="${u}"${u === sel ? ' selected' : ''}>${u}/ac</option>`).join('');
+  const unitOpts = sel => UNITS.map(u => `<option value="${u}"${u === sel ? ' selected' : ''}>${u} per acre</option>`).join('');
+  const many = state.rec.products.length > 1;
   $('products').innerHTML = state.rec.products.map((p, i) => `
-    <div class="product" data-i="${i}">
-      <div class="row">
-        <label>Product name <input id="p${i}_name" data-prod="name" value="${esc(p.name)}"></label>
+    <section class="product" data-i="${i}" aria-label="Product ${i + 1}">
+      <div class="product-head"><h3>Product ${i + 1}</h3>${many ? `<button type="button" class="btn" data-remove="${i}">Remove</button>` : ''}</div>
+      <div class="grid2">
+        <label>Product name (trade name) <input id="p${i}_name" data-prod="name" value="${esc(p.name)}"></label>
+        <label>Common name (active ingredient) <input id="p${i}_common" data-prod="common" value="${esc(p.common)}"></label>
+        <label>Company on the label <input id="p${i}_company" data-prod="company" value="${esc(p.company)}"></label>
         <label>EPA Reg. No. <input id="p${i}_epa" data-prod="epa" value="${esc(p.epa)}" placeholder="e.g. 524-475"></label>
       </div>
-      <div class="row3">
-        <label>Label rate <input id="p${i}_rate" data-prod="rate" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rate)}"></label>
+      <div class="grid4">
+        <label>Rate <input id="p${i}_rate" data-prod="rate" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rate)}"></label>
         <label>Unit <select id="p${i}_unit" data-prod="unit">${unitOpts(p.unit)}</select></label>
-        <label>REI, hours <input id="p${i}_rei" data-prod="rei" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rei)}"></label>
-        <label>PHI, days <input id="p${i}_phi" data-prod="phi" type="number" step="1" min="0" inputmode="numeric" value="${esc(p.phi)}"></label>
+        <label>Re-entry, hours <input id="p${i}_rei" data-prod="rei" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.rei)}"></label>
+        <label>Pre-harvest, days <input id="p${i}_phi" data-prod="phi" type="number" step="1" min="0" inputmode="numeric" value="${esc(p.phi)}"></label>
       </div>
-      <div class="calc"><span>Applied <b data-calc="total">—</b></span><span>Actual <b data-calc="rate">—</b></span>${state.rec.products.length > 1 ? `<button type="button" class="remove" data-remove="${i}">Remove</button>` : ''}</div>
-    </div>`).join('');
+      <div class="grid2">
+        <label>Active ingredient per unit <input id="p${i}_ai" data-prod="ai" value="${esc(p.ai)}" placeholder="e.g. 4 lb per gal, or 41%"></label>
+        <label class="check"><input type="checkbox" id="p${i}_rup" data-prod="rup"${p.rup ? ' checked' : ''}> Restricted use product</label>
+      </div>
+      <div class="calc"><span>Total used: <b data-calc="total">—</b></span><span>Actual rate: <b data-calc="rate">—</b></span></div>
+    </section>`).join('');
   refreshDerived();
 }
 
@@ -674,25 +685,32 @@ function refreshDerived() {
   document.querySelectorAll('.product').forEach(el => {
     const p = r.products[+el.dataset.i];
     const t = p && productTotals(p, r);
-    el.querySelector('[data-calc="total"]').textContent = t ? `${fmt(t.total, 1)} ${t.unit}` : '—';
-    el.querySelector('[data-calc="rate"]').textContent = t && Number.isFinite(t.actualRate) ? `${fmt(t.actualRate, 2)} ${t.unit}/ac` : '—';
-    el.querySelector('[data-calc="total"]').title = t ? (t.method === 'measured' ? 'From gallons sprayed × tank-mix concentration' : 'Label rate × acres treated (no measured volume)') : '';
+    el.querySelector('[data-calc="total"]').textContent = t ? `${fmt(t.total, 1)} ${t.unit} (${fmt(t.galOrLb.value, 2)} ${t.galOrLb.unit})` : '—';
+    el.querySelector('[data-calc="rate"]').textContent = t && Number.isFinite(t.actualRate) ? `${fmt(t.actualRate, 2)} ${t.unit} per acre` : '—';
   });
 
   const re = reentryTime(r), hv = harvestDate(r);
   const maxOf = k => Math.max(...r.products.map(p => Number(p[k])).filter(Number.isFinite));
   $('intervals').innerHTML = `
-    <div class="interval${re ? '' : ' na'}"><span class="k">Re-entry allowed</span><span class="v">${re ? fmtDateTime(re) : 'Enter REI and times'}</span>${re ? `<span class="d hint">${maxOf('rei')} h restricted-entry interval</span>` : ''}</div>
-    <div class="interval${hv ? '' : ' na'}"><span class="k">Harvest not before</span><span class="v">${hv ? fmtDate(hv) : 'Enter PHI and date'}</span>${hv ? `<span class="d hint">${maxOf('phi')} day pre-harvest interval</span>` : ''}</div>`;
+    <div class="interval${re ? '' : ' na'}"><span class="k">Keep people out until</span><span class="v">${re ? fmtDateTime(re) : 'Enter the re-entry hours and finish time'}</span>${re ? `<span>${maxOf('rei')}-hour re-entry interval</span>` : ''}</div>
+    <div class="interval${hv ? '' : ' na'}"><span class="k">Do not harvest before</span><span class="v">${hv ? fmtDate(hv) : 'Enter the pre-harvest days and date'}</span>${hv ? `<span>${maxOf('phi')}-day pre-harvest interval</span>` : ''}</div>`;
 
   const c = complianceCheck(r);
-  const fedMissing = c.missing.filter(m => m.scope === 'federal').length;
   const chip = $('complianceChip');
-  chip.className = 'chip ' + (c.complete ? 'ok' : fedMissing ? 'bad' : 'warn');
-  chip.textContent = c.complete ? 'Complete' : fedMissing ? `${fedMissing} required item${fedMissing > 1 ? 's' : ''} missing` : `${c.missing.length} state item${c.missing.length > 1 ? 's' : ''} missing`;
-  $('checklist').innerHTML = c.items.map(i => `<li class="${i.ok ? '' : 'miss'}">${i.label}${i.scope === 'state' ? ' <small>state</small>' : ''}</li>`).join('');
+  chip.className = 'chip ' + (c.complete ? 'ok' : 'bad');
+  chip.textContent = c.complete ? 'Complete' : `${c.missing.length} missing`;
+  $('checklist').innerHTML = c.items.map(i => `<li class="${i.ok ? '' : 'miss'}">${i.ok ? esc(i.label) : `<button type="button" data-goto="${i.step}">${esc(i.label)}</button>`}</li>`).join('');
+  $('docWarn').textContent = c.complete ? '' : `The record check shows ${c.missing.length} item${c.missing.length > 1 ? 's' : ''} missing. You can still make the documents; the state record lists what's missing.`;
 
-  $('jobTitle').textContent = r.job.field ? `${r.job.field}${r.job.date ? ' · ' + fmtDate(new Date(r.job.date + 'T00:00')) : ''}` : 'New application record';
+  $('jobTitle').textContent = r.job.field ? `${r.job.field}${r.job.date ? ', ' + fmtDate(new Date(r.job.date + 'T00:00')) : ''}` : 'New job';
+  const done = {
+    field: state.boundary.length > 0,
+    weather: !!(r.conditions.wind && r.conditions.windDir && r.conditions.temp),
+    spray: state.points.length > 1 || Number.isFinite(Number(r.job.acresOverride || NaN)),
+    products: r.products.some(p => p.name) && r.products.filter(p => p.name).every(p => p.rate),
+    finish: c.complete,
+  };
+  document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('data-done', !!done[b.dataset.step]));
   renderStats();
 }
 
@@ -704,17 +722,17 @@ function markDirty() {
 // ---------------------------------------------------------------- records list
 
 async function refreshList() {
-  state.records = await listRecords();
+  state.records = (await listRecords()).map(normalizeRecord);
   $('recCount').textContent = state.records.length;
   $('recEmpty').hidden = state.records.length > 0;
   $('recList').innerHTML = state.records.map(r => {
     const c = complianceCheck(r);
-    const fed = c.missing.filter(m => m.scope === 'federal').length;
     const ac = acresTreated(r);
-    return `<li><button type="button" data-id="${r.id}" aria-current="${r.id === state.rec.id}">
-      <span class="r-title">${esc(r.job.field || 'Untitled field')}${r.job.farm ? ` <span class="r-meta">${esc(r.job.farm)}</span>` : ''}</span>
-      <span class="r-meta">${r.job.date || 'No date'} · ${fmt(ac, 1)} ac · ${r.products.filter(p => p.name).length} product${r.products.filter(p => p.name).length !== 1 ? 's' : ''}</span>
-      <span class="chip ${c.complete ? 'ok' : fed ? 'bad' : 'warn'}">${c.complete ? 'Complete' : fed ? `${fed} missing` : 'State items missing'}</span>
+    const prods = r.products.filter(p => p.name).map(p => p.name);
+    return `<li><button type="button" data-id="${r.id}">
+      <span class="j-title">${esc(r.job.field || 'Field not named')}${r.job.farm ? `, ${esc(r.job.farm)}` : ''}</span>
+      <span class="j-meta">${r.job.date ? fmtDate(new Date(r.job.date + 'T00:00')) : 'No date'} · ${Number.isFinite(ac) ? `${fmt(ac, 1)} acres` : 'no acres'}${prods.length ? ` · ${esc(prods.join(', '))}` : ''}</span>
+      <span class="chip ${c.complete ? 'ok' : 'bad'}">${c.complete ? 'Complete' : `${c.missing.length} missing`}</span>
     </button></li>`;
   }).join('');
   $('btnDelete').hidden = !state.records.some(r => r.id === state.rec.id);
@@ -734,7 +752,7 @@ function loadRecord(rec) {
   cancelLive();
   state.owners.key = null;
   state.fitPending = true;
-  state.rec = structuredClone(rec);
+  state.rec = normalizeRecord(structuredClone(rec));
   state.points = rec.log?.points ? unpackPoints(rec.log.points) : [];
   state.boundary = rec.log?.boundary || [];
   state.notices = [];
@@ -752,7 +770,7 @@ function newRecord(seed) {
   const r = emptyRecord();
   if (seed) {
     // keep the applicator and drone from the last job: they rarely change between fields
-    r.applicator = { ...seed.applicator };
+    r.applicator = { ...r.applicator, ...seed.applicator };
     r.equipment = { ...seed.equipment };
   }
   state.rec = r; state.points = []; state.boundary = []; state.notices = []; state.draw = null;
@@ -770,20 +788,20 @@ function loadSample() {
   const j = sampleJob();
   const r = emptyRecord();
   Object.assign(r.job, j.record.job);
-  r.applicator = { ...j.record.applicator };
+  r.applicator = { ...r.applicator, ...j.record.applicator };
   r.equipment = { ...j.record.equipment };
-  r.products = j.record.products.map(p => ({ ...p }));
-  r.conditions = { ...j.record.conditions };
+  r.products = j.record.products.map(p => ({ ...blankProduct(), ...p }));
+  r.conditions = { ...r.conditions, ...j.record.conditions };
   r.notes = j.record.notes;
   r.sourceFiles = [j.fileName, 'north-40-boundary.geojson'];
   state.rec = r;
   state.points = parseFile(j.fileName, j.csv).points;
   state.boundary = j.boundary;
-  state.notices = [{ text: 'Sample job loaded: a simulated 40-acre fungicide application with a clogged nozzle on one pass and GPS drift on another. Every name and number here is an example.' }];
+  state.notices = [{ text: 'This is the practice job: a made-up 40-acre spraying with a clogged nozzle on one pass. All names and numbers are examples. Tap New job to start a real one.' }];
   syncLog();
   analyze();
   setTimesFromLog();
-  state.dirty = true; $('saveState').textContent = 'Example, not saved';
+  state.dirty = true; $('saveState').textContent = 'Practice job, not saved';
   renderAll();
 }
 
@@ -818,48 +836,141 @@ async function copyText(text, el, textarea) {
   catch { if (textarea) { textarea.focus(); textarea.select(); } if (el) el.textContent = 'Press Ctrl+C (⌘C) to copy the selected text'; }
 }
 
-function downloadCSV() {
+async function downloadCSV() {
   const blob = new Blob([$('exportText').value], { type: 'text/csv' });
+  const name = `spray-records-${isoDate(new Date())}.csv`;
+  try {
+    const dl = await window.claude?.use?.('downloads').catch(() => null);
+    if (dl) { await dl.save({ filename: name, data: blob }); $('exportState').textContent = 'Saved.'; return; }
+  } catch (e) { $('exportState').textContent = e.code === 'declined' ? 'Not saved.' : 'Saving is not available here. Use Copy instead.'; return; }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `spray-records-${isoDate(new Date())}.csv`;
+  a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $('exportState').textContent = 'Saved to your downloads.';
 }
 
-function buildReport() {
-  const r = state.rec, s = r.summary || {};
-  const kv = (k, v) => `<div><span>${k}</span>${esc(v || '—')}</div>`;
-  const re = reentryTime(r), hv = harvestDate(r);
-  const gal = volumeGal(r), ac = acresTreated(r);
-  const img = state.analysis ? coverageImage(state.analysis).toDataURL('image/png') : null;
-  const prods = r.products.filter(p => p.name);
-  $('report').innerHTML = `
-    <h1>Pesticide Application Record</h1>
-    <p>${esc(r.applicator.company)}</p>
-    <h2>Application</h2>
-    <div class="kv">
-      ${kv('Farm or customer', r.job.farm)}${kv('Field', r.job.field)}${kv('Crop or site', r.job.crop)}
-      ${kv('Parcel no(s).', r.job.parcels)}${kv('Land owner', r.job.landowner)}${kv('County records', r.job.parcels ? 'Director of Equalization' : '')}
-      ${kv('Date', r.job.date)}${kv('Start – end', r.job.start && `${r.job.start} – ${r.job.end}`)}${kv('Target pest', r.job.pest)}
-      ${kv('Location (centre)', s.lat != null ? `${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}` : '')}${kv('Acres treated', fmt(ac, 2))}${kv('Field acres', s.hasBoundary ? fmt(s.fieldAcres, 2) : '')}
-      ${kv('Spray volume', Number.isFinite(gal) ? `${fmt(gal, 1)} gal (${fmt(gal / ac, 2)} gal/ac)` : '')}${kv('Coverage', s.coveragePct != null ? `${fmt(s.coveragePct, 1)}% · skipped ${fmt(s.skipAcres, 2)} ac` : '')}${kv('Off target', s.hasBoundary ? `${fmt(s.offTargetAcres, 2)} ac` : '')}
-    </div>
-    <h2>Products</h2>
-    <table><thead><tr><th>Product</th><th>EPA Reg. No.</th><th>Label rate</th><th>Total applied</th><th>Actual rate</th><th>REI</th><th>PHI</th></tr></thead><tbody>
-      ${prods.map(p => { const t = productTotals(p, r); return `<tr><td>${esc(p.name)}</td><td>${esc(p.epa)}</td><td>${esc(p.rate)} ${esc(p.unit)}/ac</td><td>${t ? `${fmt(t.total, 1)} ${t.unit}` : '—'}</td><td>${t ? `${fmt(t.actualRate, 2)} ${t.unit}/ac` : '—'}</td><td>${p.rei ? esc(p.rei) + ' h' : '—'}</td><td>${p.phi ? esc(p.phi) + ' d' : '—'}</td></tr>`; }).join('') || '<tr><td colspan="7">—</td></tr>'}
-    </tbody></table>
-    <div class="kv" style="margin-top:8px">${kv('Re-entry allowed', re ? fmtDateTime(re) : '')}${kv('Harvest not before', hv ? fmtDate(hv) : '')}${kv('Target spray volume', r.equipment.targetGpa ? `${r.equipment.targetGpa} gal/ac` : '')}</div>
-    <h2>Applicator, equipment and conditions</h2>
-    <div class="kv">
-      ${kv('Applicator', r.applicator.name)}${kv('Certification no.', r.applicator.cert)}${kv('Company', r.applicator.company)}
-      ${kv('Drone', r.equipment.drone)}${kv('Serial / registration', r.equipment.serial)}${kv('Swath', r.equipment.swathFt ? `${r.equipment.swathFt} ft` : '')}
-      ${kv('Wind', r.conditions.wind ? `${r.conditions.wind} mph from ${r.conditions.windDir || '—'}` : '')}${kv('Temperature', r.conditions.temp ? `${r.conditions.temp} °F` : '')}${kv('Humidity', r.conditions.humidity ? `${r.conditions.humidity}%` : '')}
-    </div>
-    ${img ? `<h2>Coverage map</h2><img src="${img}" alt="Coverage map">` : ''}
-    ${r.notes ? `<h2>Notes</h2><p>${esc(r.notes)}</p>` : ''}
-    <div class="sig"><div>Applicator signature</div><div>Date</div></div>
-    <p style="font-size:8pt;color:#555;margin-top:12px">Generated by SprayLedger from ${esc((r.sourceFiles || []).join(', ') || 'manual entry')}.</p>`;
+// ---------------------------------------------------------------- documents
+
+/** A clean north-up map for the documents: coverage (or the field) on white, with boundary, pins, scale and north arrow. */
+function documentMap() {
+  const a = state.analysis;
+  if (!a && !state.boundary.length) return null;
+  const W = 1100, H = 700, pad = 40;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+  let proj, polys, minX, minY, maxX, maxY;
+  if (a) {
+    proj = a.proj; polys = a.polys;
+    ({ minX, minY } = a.grid); maxX = minX + a.grid.W * a.grid.cellM; maxY = minY + a.grid.H * a.grid.cellM;
+  } else {
+    const r0 = state.boundary[0][0];
+    const lat0 = r0.reduce((t, p) => t + p[0], 0) / r0.length, lon0 = r0.reduce((t, p) => t + p[1], 0) / r0.length;
+    proj = makeProjection(lat0, lon0);
+    polys = state.boundary.map(p => p.map(r => r.map(([la, lo]) => proj.toXY(la, lo))));
+    const pts = polys.flatMap(p => p[0]);
+    minX = Math.min(...pts.map(p => p[0])); maxX = Math.max(...pts.map(p => p[0]));
+    minY = Math.min(...pts.map(p => p[1])); maxY = Math.max(...pts.map(p => p[1]));
+  }
+  const k = Math.min((W - 2 * pad) / (maxX - minX), (H - 2 * pad) / (maxY - minY));
+  const ox = (W - (maxX - minX) * k) / 2, oy = (H - (maxY - minY) * k) / 2;
+  const sx = x => ox + (x - minX) * k, sy = y => oy + (maxY - y) * k;
+  if (a) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(coverageImage(a), sx(minX), sy(maxY), (maxX - minX) * k, (maxY - minY) * k);
+  } else {
+    ctx.fillStyle = '#f3e3e3';
+    ctx.beginPath(); polys.forEach(p => p.forEach(r => r.forEach(([x, y], i) => (i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)))))); ctx.fill('evenodd');
+  }
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 3;
+  polys.forEach(p => p.forEach(r => { ctx.beginPath(); r.forEach(([x, y], i) => (i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)))); ctx.closePath(); ctx.stroke(); }));
+  if (a) {
+    ctx.font = 'bold 18px Helvetica, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    bigGaps(a).forEach((g, i) => {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sx(g.x), sy(g.y), 15, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#d02020'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#111'; ctx.fillText(String(i + 1), sx(g.x), sy(g.y) + 1);
+    });
+  }
+  // north arrow and scale bar
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.moveTo(W - 40, 20); ctx.lineTo(W - 52, 50); ctx.lineTo(W - 40, 43); ctx.lineTo(W - 28, 50); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 18px Helvetica, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('N', W - 40, 66);
+  const ftPerPx = 1 / (k * M_PER_FT);
+  const len = [100, 200, 250, 500, 1000, 1320, 2640, 5280].filter(v => v / ftPerPx <= W * 0.3).pop() || 100;
+  const px = len / ftPerPx;
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(20, H - 30); ctx.lineTo(20, H - 20); ctx.lineTo(20 + px, H - 20); ctx.lineTo(20 + px, H - 30); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.fillText(len >= 1320 ? `${len / 5280} mile` : `${len} ft`, 28 + px, H - 24);
+  return { dataUrl: c.toDataURL('image/png'), aspect: W / H };
+}
+
+async function makeDocument(kind, act, btn) {
+  const out = $('docState');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Making the PDF…';
+  try {
+    if (!window.jspdf) throw new Error('The PDF maker did not load. Reload the page and try again.');
+    syncLog();
+    await saveRecord(state.rec); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList();
+    const ctx = {
+      map: documentMap(),
+      gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
+    };
+    const r = state.rec;
+    const doc = kind === 'customer' ? customerReport(r, ctx) : stateRecord(r, ctx);
+    const name = fileName(kind === 'customer' ? 'customer-report' : 'SD-application-record', r);
+    const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
+    const how = act === 'send' && shareFiles
+      ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'} on ${fmtDate(new Date(r.job.date + 'T00:00'))}.` : '' })
+      : await deliverPdf(doc, name, { title, noShare: true });
+    out.textContent = how === 'shared' ? 'Sent.' : how === 'cancelled' ? 'Not sent.' : `Saved as ${name}.`;
+  } catch (e) {
+    out.textContent = e.code === 'declined' ? 'Not saved.' : (e.message || 'The PDF could not be made.');
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+// Can this device send files through its share menu (phones and tablets usually can)?
+const shareFiles = (() => {
+  try { return !!navigator.canShare?.({ files: [new File(['x'], 'x.pdf', { type: 'application/pdf' })] }); } catch { return false; }
+})();
+
+// ---------------------------------------------------------------- steps, views and text size
+
+const STEPS = ['field', 'weather', 'spray', 'products', 'finish'];
+const STEP_NAMES = { field: 'Field', weather: 'Weather', spray: 'Spray', products: 'Products', finish: 'Finish' };
+
+function showView(name) {
+  $('viewJobs').hidden = name !== 'jobs';
+  $('viewJob').hidden = name !== 'job';
+  $('btnJobs').setAttribute('aria-pressed', name === 'jobs');
+  if (name === 'job') setStep(state.step || 'field');
+  scrollTo({ top: 0 });
+}
+
+function setStep(name) {
+  state.step = name;
+  document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
+  document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
+  const slot = document.querySelector(`[data-map-slot="${name}"]`);
+  const card = $('mapcard');
+  if (slot) { slot.appendChild(card); card.hidden = false; requestAnimationFrame(() => { fmap?.invalidate(); if (state.fitPending) renderMap(); }); }
+  else card.hidden = true;
+  const i = STEPS.indexOf(name);
+  $('stepPrev').hidden = i === 0;
+  $('stepPrev').textContent = i > 0 ? `Back: ${STEP_NAMES[STEPS[i - 1]]}` : 'Back';
+  $('stepNext').hidden = i === STEPS.length - 1;
+  $('stepNext').textContent = i < STEPS.length - 1 ? `Next: ${STEP_NAMES[STEPS[i + 1]]}` : '';
+  if (name === 'weather') loadWeather();
+}
+
+const SIZES = ['', 'l', 'xl'];
+function applyTextSize(sz) {
+  if (sz) document.documentElement.dataset.size = sz; else delete document.documentElement.dataset.size;
+  try { localStorage.setItem('sprayledger.textsize', sz); } catch { /* private mode */ }
+  requestAnimationFrame(() => fmap?.invalidate());
 }
 
 // ---------------------------------------------------------------- events
@@ -870,37 +981,51 @@ function confirmClick(btn, label, fn) {
   setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = btn.dataset.label; } }, 4000);
 }
 
-$('form').addEventListener('input', e => {
+function onFieldInput(e) {
   const t = e.target;
+  if (t.closest?.('#mapcard')) return;
   if (t.dataset.path) setPath(state.rec, t.dataset.path, t.value);
-  else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.value;
+  else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.type === 'checkbox' ? t.checked : t.value;
   else return;
   markDirty();
   refreshDerived();
-});
-$('form').addEventListener('click', e => {
+}
+document.addEventListener('input', onFieldInput);
+document.addEventListener('change', e => { if (e.target.type === 'checkbox' && e.target.dataset.prod) onFieldInput(e); });
+$('products').addEventListener('click', e => {
   const rm = e.target.closest('[data-remove]');
   if (rm) { state.rec.products.splice(+rm.dataset.remove, 1); markDirty(); renderProducts(); }
 });
 $('addProduct').addEventListener('click', () => {
-  state.rec.products.push({ name: '', epa: '', rate: '', unit: 'fl oz', rei: '', phi: '' });
+  state.rec.products.push(blankProduct());
   markDirty(); renderProducts();
   $(`p${state.rec.products.length - 1}_name`).focus();
 });
-$('form').addEventListener('submit', async e => {
-  e.preventDefault();
+$('btnSave').addEventListener('click', async () => {
   syncLog();
   await saveRecord(state.rec);
   state.dirty = false;
   $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`;
   await refreshList();
 });
+document.querySelectorAll('[data-doc]').forEach(b => {
+  if (b.dataset.act === 'send' && !shareFiles) b.textContent = b.dataset.doc === 'customer' ? 'Save to send to customer' : 'Save to file';
+  b.addEventListener('click', () => makeDocument(b.dataset.doc, b.dataset.act, b));
+});
+// Without a share menu both buttons would do the same thing, so show one.
+if (!shareFiles) document.querySelectorAll('[data-doc][data-act="save"]').forEach(b => { b.hidden = true; });
+$('checklist').addEventListener('click', e => { const b = e.target.closest('[data-goto]'); if (b) setStep(b.dataset.goto); });
+document.querySelectorAll('.steps [data-step]').forEach(b => b.addEventListener('click', () => setStep(b.dataset.step)));
+$('stepPrev').addEventListener('click', () => { setStep(STEPS[Math.max(0, STEPS.indexOf(state.step) - 1)]); scrollTo({ top: 0 }); });
+$('stepNext').addEventListener('click', () => { setStep(STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(state.step) + 1)]); scrollTo({ top: 0 }); });
+$('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jobs' : 'job'));
+$('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
+$('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnDelete').addEventListener('click', e => confirmClick(e.currentTarget, 'Confirm delete', async () => {
   await deleteRecord(state.rec.id);
   newRecord(state.rec);
+  showView('jobs');
 }));
-$('btnPrint').hidden = embedded;
-$('btnPrint').addEventListener('click', () => { buildReport(); window.print(); });
 
 let swathTimer;
 $('swath').addEventListener('input', e => {
@@ -917,17 +1042,19 @@ addEventListener('dragleave', e => { if (!e.relatedTarget) dz.classList.remove('
 addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); if (e.dataTransfer?.files?.length) importFiles(e.dataTransfer.files); });
 
 $('btnNew').addEventListener('click', e => {
-  if (state.dirty && state.rec.summary) confirmClick(e.currentTarget, 'Discard changes?', () => newRecord(state.rec));
-  else newRecord(state.rec);
+  const go = () => { newRecord(state.rec); state.step = 'field'; showView('job'); };
+  if (state.dirty && state.rec.summary && !/Practice/.test($('saveState').textContent)) confirmClick(e.currentTarget, 'Discard unsaved job?', go);
+  else go();
 });
 $('btnSample').addEventListener('click', e => {
-  if (state.dirty && state.rec.summary) confirmClick(e.currentTarget, 'Discard changes?', loadSample);
-  else loadSample();
+  const go = () => { loadSample(); state.step = 'spray'; showView('job'); };
+  if (state.dirty && state.rec.summary) confirmClick(e.currentTarget, 'Discard unsaved job?', go);
+  else go();
 });
 $('recList').addEventListener('click', e => {
   const b = e.target.closest('[data-id]'); if (!b) return;
   const rec = state.records.find(r => r.id === b.dataset.id);
-  if (rec) loadRecord(rec);
+  if (rec) { loadRecord(rec); state.step = 'finish'; showView('job'); }
 });
 $('gaps').addEventListener('click', e => {
   const b = e.target.closest('[data-copy]'); if (!b) return;
@@ -974,13 +1101,14 @@ $('drawDone').addEventListener('click', () => {
 $('wxRefresh').addEventListener('click', () => loadWeather(true));
 $('wxFill').addEventListener('click', async () => {
   const s = state.rec.summary, st = $('wxFillState');
+  const loc = wxLocation();
   const when = state.rec.job.date ? new Date(`${state.rec.job.date}T${state.rec.job.start || '12:00'}:00`).getTime() : s?.start;
-  if (!s || !when) { st.textContent = 'Load the flight log first so the field location and time are known.'; return; }
+  if (!loc || !when) { st.textContent = 'Choose the field and enter the date and start time first.'; return; }
   if (when > Date.now() + 3600_000) { st.textContent = 'The application time is in the future.'; return; }
   st.textContent = 'Looking up the weather…';
   try {
-    const c = await fetchConditionsAt(s.lat, s.lon, when);
-    Object.assign(state.rec.conditions, { wind: c.wind, windDir: c.windDir, temp: c.temp, humidity: c.humidity });
+    const c = await fetchConditionsAt(loc[0], loc[1], when);
+    Object.assign(state.rec.conditions, { wind: c.wind, windDir: c.windDir, temp: c.temp, humidity: c.humidity, source: 'Open-Meteo (modelled, wind at 33 ft)' });
     fillForm(); markDirty();
     st.textContent = `Filled from Open-Meteo for ${dayTime(c.at)} (gusts ${Math.round(c.gust)} mph). Modelled weather: if you measured on site, use your readings.`;
   } catch (e) { st.textContent = e.message; }
@@ -1003,11 +1131,20 @@ new ResizeObserver(() => fmap?.invalidate()).observe($('map').parentElement);
 // ---------------------------------------------------------------- start
 
 (async () => {
+  try { applyTextSize(localStorage.getItem('sprayledger.textsize') || ''); } catch { /* private mode */ }
   const ok = await persistent();
   const note = $('storageNote');
   note.hidden = false;
-  note.textContent = ok ? 'Records are stored in this browser on this device. Export regularly to keep a copy.' : 'This browser is not keeping data, so saved records last only until the tab closes. Export to keep them.';
+  note.textContent = ok
+    ? 'Jobs are kept in this browser on this device. Export them now and then so you have a copy.'
+    : 'This browser is not keeping data, so jobs last only until you close it. Export to keep them.';
   await refreshList();
-  if (state.records.length) loadRecord(state.records[0]);
-  else loadSample();
+  if (state.records.length) {
+    loadRecord(state.records[0]);
+    showView('jobs');
+  } else {
+    loadSample();
+    state.step = 'spray';
+    showView('job');
+  }
 })();

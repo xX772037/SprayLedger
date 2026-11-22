@@ -1,17 +1,31 @@
-// Application records: product math, compliance checks, intervals and CSV export.
+// Application records: product math, South Dakota record check, intervals and CSV export.
+//
+// South Dakota rules (ARSD 12:56:07, current text):
+//   :01  eleven items every applicator must record for each application (checked below)
+//   :02  records completed and available to the department at the close of each day
+//   :03  kept three years from the application date; a copy to the department on request
+//   :04  a commercial applicator gives the customer a record on written request
+//   :05  the department may ask for a yearly summary by county
 
 export const UNITS = ['fl oz', 'pt', 'qt', 'gal', 'oz', 'lb', 'mL', 'L', 'g', 'kg'];
+const LIQUID_TO_GAL = { 'fl oz': 1 / 128, pt: 1 / 8, qt: 1 / 4, gal: 1, mL: 1 / 3785.411784, L: 1 / 3.785411784 };
+const DRY_TO_LB = { oz: 1 / 16, lb: 1, g: 1 / 453.59237, kg: 2.20462262 };
+
+export const blankProduct = () => ({ name: '', common: '', company: '', epa: '', ai: '', rate: '', unit: 'fl oz', rei: '', phi: '', rup: false });
 
 export function emptyRecord() {
   return {
     id: (globalThis.crypto?.randomUUID?.() ?? String(Date.now()) + Math.random().toString(16).slice(2)),
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    job: { date: '', start: '', end: '', farm: '', field: '', parcels: '', landowner: '', crop: '', pest: '', acresOverride: '' },
-    applicator: { name: '', cert: '', company: '' },
+    job: {
+      date: '', start: '', end: '', farm: '', customerAddress: '', field: '', legal: '',
+      parcels: '', landowner: '', crop: '', pest: '', acresOverride: '',
+    },
+    applicator: { name: '', cert: '', company: '', phone: '', address: '' },
     equipment: { drone: '', serial: '', swathFt: 23, targetGpa: 2 },
-    products: [{ name: '', epa: '', rate: '', unit: 'fl oz', rei: '', phi: '' }],
-    conditions: { wind: '', windDir: '', temp: '', humidity: '' },
+    products: [blankProduct()],
+    conditions: { wind: '', windDir: '', temp: '', humidity: '', source: '' },
     notes: '',
     volumeGalOverride: '',
     sourceFiles: [],
@@ -20,7 +34,18 @@ export function emptyRecord() {
   };
 }
 
+/** Bring a record saved by an older version up to the current shape. */
+export function normalizeRecord(rec) {
+  const base = emptyRecord();
+  for (const k of ['job', 'applicator', 'equipment', 'conditions']) rec[k] = { ...base[k], ...(rec[k] || {}) };
+  rec.products = (rec.products?.length ? rec.products : base.products).map(p => ({ ...blankProduct(), ...p }));
+  for (const k of ['notes', 'volumeGalOverride']) rec[k] ??= base[k];
+  rec.sourceFiles ??= [];
+  return rec;
+}
+
 const num = v => (v === '' || v == null ? NaN : Number(v));
+const has = v => v != null && String(v).trim() !== '';
 
 export function acresTreated(rec) {
   const o = num(rec.job.acresOverride);
@@ -30,6 +55,13 @@ export function acresTreated(rec) {
 export function volumeGal(rec) {
   const o = num(rec.volumeGalOverride);
   return Number.isFinite(o) ? o : rec.summary?.volumeGal ?? NaN;
+}
+
+/** Convert an amount to gallons (liquids) or pounds (dry), as the state form asks. */
+export function toGalOrLb(amount, unit) {
+  if (unit in LIQUID_TO_GAL) return { value: amount * LIQUID_TO_GAL[unit], unit: 'gal' };
+  if (unit in DRY_TO_LB) return { value: amount * DRY_TO_LB[unit], unit: 'lb' };
+  return { value: amount, unit };
 }
 
 /**
@@ -45,7 +77,7 @@ export function productTotals(p, rec) {
   if (Number.isFinite(gal) && gal > 0 && Number.isFinite(gpa) && gpa > 0) { total = (rate / gpa) * gal; method = 'measured'; }
   else if (Number.isFinite(ac)) { total = rate * ac; method = 'label'; }
   else return null;
-  return { total, unit: p.unit, actualRate: Number.isFinite(ac) && ac > 0 ? total / ac : NaN, method };
+  return { total, unit: p.unit, actualRate: Number.isFinite(ac) && ac > 0 ? total / ac : NaN, method, galOrLb: toGalOrLb(total, p.unit) };
 }
 
 function at(dateStr, timeStr) {
@@ -72,26 +104,30 @@ export function harvestDate(rec) {
 }
 
 /**
- * Items the US federal restricted-use pesticide recordkeeping rule (7 CFR Part 110) lists.
- * Many states require more (time, wind, temperature), so those are checked too and marked as state items.
+ * The eleven items of ARSD 12:56:07:01, plus the applicator license number the state form asks for,
+ * plus the federal restricted-use items (7 CFR 110) when a product is marked restricted use.
  */
 export function complianceCheck(rec) {
-  const has = v => v != null && String(v).trim() !== '';
   const prods = rec.products.filter(p => has(p.name));
+  const all = f => prods.length > 0 && prods.every(f);
+  const located = rec.summary?.lat != null || has(rec.job.legal) || !!rec.log?.boundary?.length;
   const items = [
-    { label: 'Applicator name', ok: has(rec.applicator.name), scope: 'federal' },
-    { label: 'Applicator certification number', ok: has(rec.applicator.cert), scope: 'federal' },
-    { label: 'Date of application', ok: has(rec.job.date), scope: 'federal' },
-    { label: 'Product name', ok: prods.length > 0, scope: 'federal' },
-    { label: 'EPA registration number', ok: prods.length > 0 && prods.every(p => has(p.epa)), scope: 'federal' },
-    { label: 'Total amount applied', ok: prods.length > 0 && prods.every(p => productTotals(p, rec)), scope: 'federal' },
-    { label: 'Location (field and GPS)', ok: has(rec.job.field) && rec.summary?.lat != null, scope: 'federal' },
-    { label: 'Crop, commodity or site', ok: has(rec.job.crop), scope: 'federal' },
-    { label: 'Size of area treated', ok: Number.isFinite(acresTreated(rec)), scope: 'federal' },
-    { label: 'Start and end time', ok: has(rec.job.start) && has(rec.job.end), scope: 'state' },
-    { label: 'Wind speed and direction', ok: has(rec.conditions.wind) && has(rec.conditions.windDir), scope: 'state' },
-    { label: 'Air temperature', ok: has(rec.conditions.temp), scope: 'state' },
+    { ref: '1', label: 'Customer name and address', ok: has(rec.job.farm) && has(rec.job.customerAddress), step: 'finish' },
+    { ref: '2', label: 'Location (GPS or legal description)', ok: located, step: 'field' },
+    { ref: '3', label: 'Pest treated', ok: has(rec.job.pest), step: 'finish' },
+    { ref: '4', label: 'Acres treated', ok: Number.isFinite(acresTreated(rec)), step: 'spray' },
+    { ref: '5', label: 'Date and start and finish time', ok: has(rec.job.date) && has(rec.job.start) && has(rec.job.end), step: 'finish' },
+    { ref: '6', label: 'Who applied it', ok: has(rec.applicator.name), step: 'finish' },
+    { ref: '7', label: 'Product trade name and common name', ok: all(p => has(p.common)), step: 'products' },
+    { ref: '8', label: 'Company name on the label', ok: all(p => has(p.company)), step: 'products' },
+    { ref: '9', label: 'Wind direction, wind speed, temperature', ok: has(rec.conditions.windDir) && has(rec.conditions.wind) && has(rec.conditions.temp), step: 'finish' },
+    { ref: '10', label: 'Amount applied and concentration', ok: all(p => productTotals(p, rec) && has(p.ai)), step: 'products' },
+    { ref: '11', label: 'Crop or site treated', ok: has(rec.job.crop), step: 'finish' },
+    { ref: 'form', label: 'Applicator license (AP) number', ok: has(rec.applicator.cert), step: 'finish' },
   ];
+  if (prods.some(p => p.rup)) {
+    items.push({ ref: 'RUP', label: 'EPA reg. no. for restricted-use products', ok: prods.filter(p => p.rup).every(p => has(p.epa)), step: 'products' });
+  }
   return { items, missing: items.filter(i => !i.ok), complete: items.every(i => i.ok) };
 }
 
@@ -107,16 +143,24 @@ export function fmtDateTime(d) {
 export function fmtDate(d) {
   return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 }
+/** "14:05" → "2:05 PM" */
+export function clock(hm) {
+  if (!hm) return '';
+  const [h, m] = hm.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${pad2(m)} ${h < 12 ? 'AM' : 'PM'}`;
+}
 
 // ---------- CSV export: one row per product per application ----------
 
 const CSV_COLUMNS = [
-  'Date', 'Start', 'End', 'Farm / customer', 'Field', 'Parcel no(s).', 'Land owner', 'Latitude', 'Longitude', 'Crop / site', 'Target pest',
+  'Date', 'Start', 'Finish', 'Customer', 'Customer address', 'Field', 'Legal description', 'Parcel no(s).', 'Land owner',
+  'Latitude', 'Longitude', 'Crop / site', 'Pest(s)',
   'Acres treated', 'Field acres', 'Coverage %', 'Skipped acres', 'Overlap acres', 'Off-target acres',
-  'Product', 'EPA Reg. No.', 'Label rate', 'Rate unit', 'Total product applied', 'Actual rate / ac', 'Amount basis',
+  'Product (trade name)', 'Common name', 'Company on label', 'EPA Reg. No.', 'Restricted use', 'A.i. per unit',
+  'Label rate', 'Rate unit', 'Total product applied', 'Total (gal or lb)', 'Actual rate / ac', 'Amount basis',
   'Spray volume (gal)', 'Spray volume (gal/ac)', 'REI (h)', 'Re-entry allowed', 'PHI (days)', 'Harvest not before',
-  'Applicator', 'Certification no.', 'Company', 'Drone', 'Serial / registration', 'Swath (ft)',
-  'Wind (mph)', 'Wind from', 'Temp (°F)', 'Humidity (%)', 'Notes',
+  'Applicator', 'Applicator license (AP) no.', 'Company', 'Drone or sprayer', 'Serial / registration', 'Swath (ft)',
+  'Wind (mph)', 'Wind from', 'Temp (°F)', 'Humidity (%)', 'Weather source', 'Notes',
 ];
 
 const esc = v => {
@@ -126,22 +170,24 @@ const esc = v => {
 
 export function recordsToCSV(records) {
   const lines = [CSV_COLUMNS.join(',')];
-  for (const r of records) {
+  for (const raw of records) {
+    const r = normalizeRecord(structuredClone(raw));
     const s = r.summary || {};
     const ac = acresTreated(r), gal = volumeGal(r);
     const re = reentryTime(r), hv = harvestDate(r);
-    const prods = r.products.filter(p => p.name) .length ? r.products.filter(p => p.name) : [{ name: '', epa: '', rate: '', unit: '', rei: '', phi: '' }];
+    const prods = r.products.filter(p => p.name).length ? r.products.filter(p => p.name) : [blankProduct()];
     for (const p of prods) {
       const t = productTotals(p, r);
       lines.push([
-        r.job.date, r.job.start, r.job.end, r.job.farm, r.job.field, r.job.parcels ?? '', r.job.landowner ?? '',
+        r.job.date, r.job.start, r.job.end, r.job.farm, r.job.customerAddress, r.job.field, r.job.legal, r.job.parcels, r.job.landowner,
         s.lat?.toFixed(6) ?? '', s.lon?.toFixed(6) ?? '', r.job.crop, r.job.pest,
         fmtN(ac, 2), fmtN(s.fieldAcres, 2), fmtN(s.coveragePct, 1), fmtN(s.skipAcres, 2), fmtN(s.overlapAcres, 2), fmtN(s.offTargetAcres, 2),
-        p.name, p.epa, p.rate, p.unit ? `${p.unit}/ac` : '', t ? fmtN(t.total, 2) + ' ' + t.unit : '', t ? fmtN(t.actualRate, 2) : '',
-        t ? (t.method === 'measured' ? 'Measured spray volume' : 'Label rate × acres') : '',
+        p.name, p.common, p.company, p.epa, p.rup ? 'Yes' : 'No', p.ai,
+        p.rate, p.unit ? `${p.unit}/ac` : '', t ? fmtN(t.total, 2) + ' ' + t.unit : '', t ? `${fmtN(t.galOrLb.value, 3)} ${t.galOrLb.unit}` : '',
+        t ? fmtN(t.actualRate, 2) : '', t ? (t.method === 'measured' ? 'Measured spray volume' : 'Label rate × acres') : '',
         fmtN(gal, 2), fmtN(gal / ac, 2), p.rei, re ? `${isoDate(re)} ${hhmm(re)}` : '', p.phi, hv ? isoDate(hv) : '',
         r.applicator.name, r.applicator.cert, r.applicator.company, r.equipment.drone, r.equipment.serial, r.equipment.swathFt,
-        r.conditions.wind, r.conditions.windDir, r.conditions.temp, r.conditions.humidity, r.notes,
+        r.conditions.wind, r.conditions.windDir, r.conditions.temp, r.conditions.humidity, r.conditions.source, r.notes,
       ].map(esc).join(','));
     }
   }
