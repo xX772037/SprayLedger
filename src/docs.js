@@ -14,7 +14,7 @@ const INK = [20, 24, 22], MUTED = [78, 86, 82], LINE = [190, 198, 192], ACCENT =
 class Writer {
   constructor(title) {
     const { jsPDF } = window.jspdf;
-    this.doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    this.doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
     this.doc.setProperties({ title, creator: 'SprayLedger' });
     this.y = PAGE.m;
     this.title = title;
@@ -101,7 +101,8 @@ class Writer {
     const w = this.width, h = Math.min(w / aspect, maxH);
     const ww = h * aspect;
     this.room(h + 30);
-    this.doc.addImage(dataUrl, 'PNG', PAGE.m + (w - ww) / 2, this.y, ww, h);
+    // Compressed so the PDF stays small enough to text or email (uncompressed, one map is about 3 MB).
+    this.doc.addImage(dataUrl, 'PNG', PAGE.m + (w - ww) / 2, this.y, ww, h, undefined, 'FAST');
     this.y += h + 4;
     if (caption) this.text(caption, { size: 10, color: MUTED });
   }

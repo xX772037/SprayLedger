@@ -650,7 +650,7 @@ function renderStats() {
   const tiles = [
     stat('Field done', nb ? '—' : fmt(cov, 1), nb ? '' : '%', nb ? 'Choose the field to see this' : `of ${fmt(s.fieldAcres, 1)} acres`, nb ? '' : cov >= 98 ? 'ok' : cov >= 93 ? 'warn' : 'bad'),
     stat('Acres sprayed', fmt(ac, 1), 'ac', `${s.flights} flight${s.flights !== 1 ? 's' : ''}, ${fmt(s.sprayMinutes, 0)} min`),
-    stat('Gallons', fmt(gal, 1), Number.isFinite(gal) ? 'gal' : '', state.rec.volumeGalOverride ? 'Typed in by hand' : s.volumeGal == null ? 'Not in the log: type it in at Finish' : 'From the pump'),
+    stat('Gallons', fmt(gal, 1), Number.isFinite(gal) ? 'gal' : '', state.rec.volumeGalOverride ? 'Typed in by hand' : s.volumeGal == null ? 'Not in the log: type it in at step 5, Details' : 'From the pump'),
     stat('Gallons per acre', fmt(gpa, 2), '', tgt > 0 ? `Aimed for ${fmt(tgt, 1)}${Number.isFinite(dev) ? ` (${dev >= 0 ? '+' : ''}${fmt(dev, 0)}%)` : ''}` : '', Number.isFinite(dev) ? (Math.abs(dev) > 10 ? 'warn' : 'ok') : ''),
   ];
   const findings = [];
