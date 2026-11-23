@@ -30,7 +30,8 @@ export function sampleJob() {
   const emit = (x, y, spray, spd, f) => {
     const jx = (rand() - 0.5) * 0.6, jy = (rand() - 0.5) * 0.6;
     const [lat, lon] = proj.toLatLon(x + jx, y + jy);
-    rows.push([new Date(t).toISOString().slice(0, 19), lat.toFixed(7), lon.toFixed(7), (spray ? 3 + rand() * 0.3 : 8).toFixed(1), spd.toFixed(1), (spray ? f : 0).toFixed(2), spray ? 1 : 0, flight]);
+    // Full ISO time with its Z: a time without a zone would be read as local time and land hours off.
+    rows.push([new Date(t).toISOString().replace('.000Z', 'Z'), lat.toFixed(7), lon.toFixed(7), (spray ? 3 + rand() * 0.3 : 8).toFixed(1), spd.toFixed(1), (spray ? f : 0).toFixed(2), spray ? 1 : 0, flight]);
   };
   const flyTo = (tx, ty) => {
     const v = 9;
@@ -79,7 +80,7 @@ export function sampleJob() {
 
   return {
     csv,
-    fileName: 'sample-agras-flight-2026-06-14.csv',
+    fileName: 'sample-flight-log-2026-06-14.csv',
     boundary,
     record: {
       job: {

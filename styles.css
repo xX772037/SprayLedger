@@ -91,6 +91,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .logo-preview { width: 12rem; height: 5rem; display: grid; place-items: center; border: 2px dashed var(--line); border-radius: var(--r); background: var(--surface-2); padding: 0.4rem; }
 .logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .logo-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+/* disclaimer and privacy */
+.about { max-width: 46rem; }
+.about-card { display: grid; gap: 0.6rem; padding: 1.25rem 1.4rem; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow); }
+.about-card p, .about-card ul { margin: 0; }
+.about-card ul { padding-left: 1.2rem; display: grid; gap: 0.45rem; }
+.about-card h3 { margin-top: 0.4rem; font-size: 1.05rem; }
+.linkish { background: none; border: 0; padding: 0.5rem 0.25rem; min-height: 2.75rem; color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.site-foot { display: flex; justify-content: center; align-items: center; gap: 0.5rem; padding: 1rem 16px 2rem; color: var(--muted); border-top: 1px solid var(--line); margin-top: 2rem; }
 .offline-badge { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: auto; padding: 0.35rem 0.8rem; border-radius: 99px;
   background: #fff4e0; color: var(--warn); border: 1px solid #e6b866; font-weight: 700; font-size: 0.95rem; }
 .offline-badge svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }

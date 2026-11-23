@@ -32,6 +32,49 @@
 
 <main class="app">
 
+  <!-- ================= DISCLAIMER AND PRIVACY ================= -->
+  <section id="viewAbout" class="view about" aria-labelledby="aboutTitle" hidden>
+    <h1 id="aboutTitle">Disclaimer and privacy</h1>
+    <p class="sub">Last updated November 23, 2026.</p>
+
+    <section class="about-card" id="disclaimer" aria-labelledby="discTitle">
+      <h2 id="discTitle">Disclaimer</h2>
+      <p><b>The label is the law.</b> Always read and follow the pesticide label. SprayLedger helps you plan, track and record applications; it does not tell you what, when, where or how much to spray, and it is not legal, agronomic or safety advice.</p>
+      <ul>
+        <li><b>You are responsible for your records.</b> Check every document before you sign it, send it or file it. Product facts in the pick lists (EPA numbers, re-entry hours, active ingredients) were copied from labels and may be out of date; the label in hand is what counts.</li>
+        <li><b>Coverage, acres and gallons are estimates</b> from GPS and the sprayer's data. GPS can be off by several feet, and the numbers are only as good as the log, the swath width and the boundary you give it.</li>
+        <li><b>Weather, spray ratings, Delta T and inversion risk</b> come from a forecast service and are a guide, not a guarantee. Check the conditions in the field before and during every application.</li>
+        <li><b>Land owner and parcel information</b> comes from county records, which can be out of date or wrong. It is not a survey and not proof of ownership or boundaries.</li>
+        <li><b>Invoices</b> add up what you enter. Check the amounts before you send them.</li>
+        <li>SprayLedger is provided as it is, without any warranty. Keep your own copies of your records: export them to a spreadsheet and save your PDFs.</li>
+      </ul>
+    </section>
+
+    <section class="about-card" id="privacy" aria-labelledby="privTitle">
+      <h2 id="privTitle">Privacy</h2>
+      <p><b>Your jobs stay on your device.</b> There are no accounts and no sign-up. Jobs, saved equipment, your logo and your settings are kept in this browser on this device. They are not sent to SprayLedger or anyone else, and there is no cloud backup yet, so export your jobs to keep a copy.</p>
+      <h3>What leaves your device</h3>
+      <p>To show maps, weather and land records, the app asks these services for information. Each one sees your internet address and the request:</p>
+      <ul>
+        <li><b>Map pictures:</b> Esri (satellite) and OpenStreetMap (streets) receive the map area you are looking at.</li>
+        <li><b>Weather:</b> Open-Meteo receives the field's location and the date and time you ask about.</li>
+        <li><b>Land records and address search:</b> the District III Planning &amp; Development GIS service receives the map area you are looking at and any address you search for.</li>
+        <li><b>The website itself</b> is served by its host (GitHub Pages), which receives your internet address when the app is opened.</li>
+      </ul>
+      <p>Customer names, products, rates, invoices and flight logs are never sent to these services.</p>
+      <h3>Location</h3>
+      <p>The app asks for your phone's location only when you tap the go-to-my-location button or track a job live. Your position is used on this device to draw the map and the coverage; it is not sent anywhere.</p>
+      <h3>No tracking</h3>
+      <p>SprayLedger has no advertising, no analytics and no tracking cookies.</p>
+      <h3>Sharing</h3>
+      <p>Documents leave your device only when you choose to download, text or email them.</p>
+      <h3>Removing your data</h3>
+      <p>Delete a job from the Documents step, delete saved equipment on the Plan step, and remove your logo on the Invoice step. Clearing this site's data in your browser settings removes everything.</p>
+    </section>
+
+    <div class="row-actions"><button type="button" class="btn btn-big" id="aboutBack">Back</button></div>
+  </section>
+
   <!-- ================= WELCOME ================= -->
   <section id="viewHome" class="view home" aria-labelledby="homeTitle" hidden>
     <div class="hero">
@@ -105,6 +148,7 @@
       <div>
         <h2>Ready when you are</h2>
         <p>Your jobs are kept in this browser on this device. Export them to a spreadsheet any time.</p>
+        <p class="sub">The label is the law: SprayLedger keeps your records, it doesn't replace the label. <button type="button" class="linkish" data-about="disclaimer">Read the disclaimer</button></p>
       </div>
       <button type="button" class="btn btn-primary btn-big" id="homeStart2">Start a new job</button>
     </section>
@@ -371,8 +415,8 @@
         <details class="fold small">
           <summary>Change acres or gallons</summary>
           <div class="grid2 fold-body">
-            <label>Acres treated <input id="f_acres" data-path="job.acresOverride" type="number" step="0.01" inputmode="decimal"></label>
-            <label>Gallons sprayed <input id="f_gal" data-path="volumeGalOverride" type="number" step="0.1" inputmode="decimal"></label>
+            <label>Acres treated <input id="f_acres" data-path="job.acresOverride" type="number" min="0" step="0.01" inputmode="decimal"></label>
+            <label>Gallons sprayed <input id="f_gal" data-path="volumeGalOverride" type="number" min="0" step="0.1" inputmode="decimal"></label>
           </div>
           <p class="sub">These come from the GPS record. Type a number only if it's wrong.</p>
         </details>
@@ -483,6 +527,12 @@
     </nav>
   </section>
 </main>
+
+<footer class="site-foot">
+  <button type="button" class="linkish" data-about="disclaimer">Disclaimer</button>
+  <span aria-hidden="true">·</span>
+  <button type="button" class="linkish" data-about="privacy">Privacy</button>
+</footer>
 
 <!-- The map moves into the slot of whichever step is showing. -->
 <section class="mapcard" id="mapcard" aria-label="Map">

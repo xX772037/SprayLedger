@@ -212,3 +212,30 @@ test('payment instructions are part of the business details carried to new jobs'
   const old = emptyRecord(); delete old.applicator.payment;
   assert.equal(normalizeRecord(old).applicator.payment, '');
 });
+
+// ---- invoice edge cases from the pre-merge check: the total is never NaN, negative, -0 or blank ----
+test('invoice edge cases: every total is a real, non-negative dollar amount', async () => {
+  const { emptyRecord, invoiceTotals, fmtMoney } = await import('../src/records.js');
+  const job = ({ acres = '40', rate = '12', products } = {}) => { const r = emptyRecord(); r.job.acresOverride = acres; r.invoice.ratePerAcre = rate; if (products) r.products = products; return r; };
+  const P = cost => ({ ...emptyRecord().products[0], name: 'Veltyma', rate: '7', unit: 'fl oz', invoiceCost: cost });
+  const cases = [
+    ['zero acres', job({ acres: '0', products: [P('250')] }), '$250.00'],
+    ['zero rate per acre', job({ rate: '0', products: [P('250')] }), '$250.00'],
+    ['a product with no cost entered', job({ products: [P('')] }), '$480.00'],
+    ['no products at all (and no rate)', job({ rate: '', products: [] }), '$0.00'],
+    ['a rate but no products', job({ products: [] }), '$480.00'],
+    ['acres not known', job({ acres: '', products: [P('250')] }), '$250.00'],
+    ['negative acres typed', job({ acres: '-5', products: [] }), '$0.00'],
+    ['a tiny negative that rounds to -0', job({ acres: '-0.001', products: [] }), '$0.00'],
+    ['junk rate and a negative cost', job({ rate: 'abc', products: [P('-20')] }), '$0.00'],
+  ];
+  for (const [name, r, want] of cases) {
+    const inv = invoiceTotals(r);
+    for (const k of ['application', 'productCost', 'total']) {
+      assert.ok(Number.isFinite(inv[k]) && inv[k] >= 0 && !Object.is(inv[k], -0), `${name}: ${k} = ${inv[k]}`);
+      assert.match(fmtMoney(inv[k]), /^\$\d{1,3}(,\d{3})*\.\d{2}$/, `${name}: ${k} shows ${fmtMoney(inv[k])}`);
+    }
+    assert.equal(fmtMoney(inv.total), want, name);
+  }
+  assert.equal(fmtMoney(-0), '$0.00'); assert.equal(fmtMoney(NaN), '$0.00'); assert.equal(fmtMoney(-3), '$0.00');
+});

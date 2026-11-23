@@ -136,6 +136,7 @@ async function importFiles(fileList) {
 }
 
 function syncLog() {
+  flushReanalyze();
   state.rec.log = state.points.length || state.boundary.length ? { points: packPoints(state.points), boundary: state.boundary } : null;
 }
 
@@ -1142,6 +1143,7 @@ const STEP_INFO = {
 
 function showView(name) {
   $('viewHome').hidden = name !== 'home';
+  $('viewAbout').hidden = name !== 'about';
   $('viewJobs').hidden = name !== 'jobs';
   $('viewJob').hidden = name !== 'job';
   $('btnJobs').setAttribute('aria-pressed', name === 'jobs');
@@ -1151,6 +1153,7 @@ function showView(name) {
 }
 
 function setStep(name) {
+  flushReanalyze();
   state.step = name;
   document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
@@ -1202,8 +1205,14 @@ function confirmClick(btn, label, fn) {
 let swathTimer;
 function scheduleReanalyze() {
   clearTimeout(swathTimer);
-  swathTimer = setTimeout(() => { analyze(); renderMap(); renderGaps(); refreshDerived(); }, 300);
+  swathTimer = setTimeout(runReanalyze, 300);
 }
+function runReanalyze() { swathTimer = null; analyze(); renderMap(); renderGaps(); refreshDerived(); }
+/**
+ * Run a waiting recalculation now. Called before anything uses the acres (saving, PDFs, changing step):
+ * otherwise a save within 300 ms of a swath change would store the old acres.
+ */
+function flushReanalyze() { if (swathTimer) { clearTimeout(swathTimer); runReanalyze(); } }
 
 function onFieldInput(e) {
   const t = e.target;
@@ -1277,6 +1286,19 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// Disclaimer and privacy: one screen, opened from the footer or the welcome page; Back returns to where you were.
+let beforeAbout = 'home';
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-about]'); if (!b) return;
+  const now = ['home', 'jobs', 'job'].find(v => !$(v === 'home' ? 'viewHome' : v === 'jobs' ? 'viewJobs' : 'viewJob').hidden);
+  if (now) beforeAbout = now;
+  showView('about');
+  // scroll the section to just below the sticky top bar, so its heading isn't hidden behind it
+  const sec = $(b.dataset.about), bar = document.querySelector('.appbar');
+  if (sec) scrollTo({ top: sec.getBoundingClientRect().top + scrollY - (bar?.offsetHeight || 0) - 12 });
+});
+$('aboutBack').addEventListener('click', () => showView(beforeAbout));
 
 // ---------------------------------------------------------------- business logo
 function renderLogo() {

@@ -193,12 +193,13 @@ const cents = v => Math.round(v * 100) / 100;
 /**
  * The invoice for a job: acres sprayed x rate per acre, plus what the applicator charges for each product.
  * Blank, negative or non-numeric amounts count as $0. Unknown acres count as 0 (acresKnown says so).
- * Billed acres are rounded to 2 decimals, as printed, so the customer can check acres × rate themselves.
+ * Billed acres are rounded to 2 decimals, as printed, so the customer can check acres × rate themselves,
+ * and are never below 0 (a negative typed into the acres box bills nothing, not a credit).
  */
 export function invoiceTotals(rec) {
   const measured = acresTreated(rec);
   const acresKnown = Number.isFinite(measured);
-  const acres = acresKnown ? cents(measured) : NaN;
+  const acres = acresKnown ? Math.max(0, cents(measured)) + 0 : NaN; // + 0 turns -0 into 0
   const rate = money(rec.invoice?.ratePerAcre);
   const application = cents((acresKnown ? acres : 0) * rate);
   const lines = rec.products.filter(p => String(p.name || '').trim()).map(p => ({ product: p, used: productTotals(p, rec), cost: cents(money(p.invoiceCost)) }));
@@ -231,7 +232,8 @@ export function invoiceNumberTaken(records, rec) {
   return !!n && records.some(r => r.id !== rec.id && String(r.invoice?.number || '').trim() === n);
 }
 
-export const fmtMoney = v => '$' + (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Dollars for the invoice. Invoice amounts are never negative, so anything that isn't a positive number shows as $0.00. */
+export const fmtMoney = v => '$' + (Number.isFinite(v) && v > 0 ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CSV_COLUMNS = [
   'Date', 'Start', 'Finish', 'Customer', 'Customer address', 'Field', 'Legal description', 'Parcel no(s).', 'Land owner',

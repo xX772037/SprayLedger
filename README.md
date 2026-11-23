@@ -34,6 +34,15 @@ Specs and label facts live in `src/catalog.js`, each checked against the maker's
 
 The app walks through a job in seven steps (**Field → Plan → Spray → Products → Details → Documents → Invoice**), one screen at a time, each with a "Step 2 of 7" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
 
+## Disclaimer and privacy
+
+A **Disclaimer** and **Privacy** link sits at the bottom of every screen (and the welcome page links the disclaimer). In plain language:
+
+- **Disclaimer:** the label is the law; SprayLedger keeps records and is not legal, agronomic or safety advice; coverage, acres, gallons, weather ratings and land records are estimates from GPS, forecasts and county data; no warranty; keep your own copies.
+- **Privacy:** jobs, equipment, the logo and settings stay in the browser on the device, with no accounts, analytics or tracking cookies. It names exactly what leaves the device: the map area to Esri and OpenStreetMap, the field location and date to Open-Meteo, the map area and searched addresses to the District III GIS service, and the visit to the site's host. Location is used only for go-to-my-location and live tracking and is never sent anywhere.
+
+These were written for a small software tool, not by a lawyer. Have an attorney review them before charging customers, and update the privacy page whenever a new outside service is added (the list is in `src/config.js` and `src/parcels.js`).
+
 ## Invoicing
 
 Step 7, **Invoice**, comes after Documents and opens from any job, including finished ones in My jobs.
