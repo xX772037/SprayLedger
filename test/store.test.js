@@ -54,3 +54,12 @@ test('saved equipment: save, update in place, delete', async () => {
   await deleteEquipment('e1');
   assert.deepEqual(await listEquipment(), []);
 });
+
+test('business settings (the logo): save, read back, remove', async () => {
+  const { getSetting, setSetting } = await import('../src/store.js');
+  assert.equal(await getSetting('logo'), null);
+  await setSetting('logo', { dataUrl: 'data:image/png;base64,AAAA', width: 2, height: 1 });
+  assert.deepEqual(await getSetting('logo'), { dataUrl: 'data:image/png;base64,AAAA', width: 2, height: 1 });
+  await setSetting('logo', null);
+  assert.equal(await getSetting('logo'), null);
+});

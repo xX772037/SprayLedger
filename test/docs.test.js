@@ -91,3 +91,48 @@ test('customer report: re-entry time uses the longest REI in the mix', () => {
   const t = textOf(customerReport(r));
   assert.ok(t.includes('Jun 16, 2026, 8:33 AM'), 're-entry 48 h after the 08:33 finish');
 });
+
+test('invoice PDF: customer, field, acres × rate, each product charge and the total', async () => {
+  const { invoicePdf } = await import('../src/docs.js');
+  const r = record();
+  r.invoice = { ratePerAcre: '12', total: 0 };
+  r.products[0].invoiceCost = '250';
+  const t = textOf(invoicePdf(r));
+  for (const s of ['Invoice', 'Test Farm', 'North 40', '39.40 acres sprayed', '$12.00 per acre', '$472.80', 'Veltyma', '$250.00', 'Total due:', '$722.80', 'Test Spraying']) {
+    assert.ok(t.includes(s), `missing: ${s}`);
+  }
+});
+
+// a 2 × 1 PNG (red and green pixels)
+const LOGO = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGM4IScnl2cDAAc3Ac047clTAAAAAElFTkSuQmCC', width: 2, height: 1 };
+
+test('invoice PDF: invoice number, invoice date, payment instructions and the logo', async () => {
+  const { invoicePdf, fileName } = await import('../src/docs.js');
+  const r = record();
+  r.invoice = { number: '1042', ratePerAcre: '12', total: 0 };
+  r.applicator.payment = 'Due within 30 days. Checks payable to Test Spraying.';
+  const doc = invoicePdf(r, { logo: LOGO, today: new Date(2026, 5, 20) });
+  const t = textOf(doc);
+  for (const s of ['Invoice No. 1042', 'Invoice date: Jun 20, 2026', 'How to pay', 'Due within 30 days. Checks payable to Test Spraying.']) assert.ok(t.includes(s), `missing: ${s}`);
+  assert.match(doc.output(), /\/Subtype \/Image/, 'logo embedded');
+  assert.equal(doc.getNumberOfPages(), 1, 'the invoice fits on one page');
+  assert.ok(t.includes('Applicator: Pat Applicator'));
+  // without a payment note or logo: no empty heading, no image
+  r.applicator.payment = '';
+  const plain = invoicePdf(r);
+  assert.ok(!textOf(plain).includes('How to pay'));
+  assert.doesNotMatch(plain.output(), /\/Subtype \/Image/);
+});
+
+test('customer report carries the logo too; the state record does not', async () => {
+  const { customerReport, stateRecord } = await import('../src/docs.js');
+  assert.match(customerReport(record(), { logo: LOGO }).output(), /\/Subtype \/Image/);
+  assert.doesNotMatch(stateRecord(record(), { logo: LOGO }).output(), /\/Subtype \/Image/);
+});
+
+test('a damaged logo is left off, and the PDF is still made', async () => {
+  const { invoicePdf } = await import('../src/docs.js');
+  const r = record(); r.invoice = { number: '7', ratePerAcre: '1', total: 0 };
+  const doc = invoicePdf(r, { logo: { dataUrl: 'data:image/png;base64,AAAA', width: 2, height: 1 } });
+  assert.ok(textOf(doc).includes('Invoice No. 7'));
+});

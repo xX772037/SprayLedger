@@ -115,3 +115,100 @@ test('the record check: 11 rule items plus license, address and REI; adjuvants s
   r.applicator.address = '';
   assert.deepEqual(complianceCheck(r).missing.map(m => m.ref), ['addr']);
 });
+
+// ---- invoice ----
+async function invoiceJob() {
+  const { emptyRecord } = await import('../src/records.js');
+  const r = emptyRecord();
+  r.job = { ...r.job, date: '2026-06-14', farm: 'Example Farms', field: 'North 40', acresOverride: '39.42' };
+  r.products = [
+    { ...r.products[0], name: 'Veltyma', rate: '7', unit: 'fl oz', invoiceCost: '250' },
+    { ...r.products[0], name: 'Non-ionic surfactant (NIS)', rate: '0.25', unit: 'pt', invoiceCost: '18.5' },
+  ];
+  return r;
+}
+
+test('invoice: acres × rate per acre', async () => {
+  const { invoiceTotals } = await import('../src/records.js');
+  const r = await invoiceJob(); r.invoice.ratePerAcre = '12';
+  const inv = invoiceTotals(r);
+  assert.equal(inv.rate, 12);
+  assert.equal(inv.application, 473.04); // 39.42 × 12
+});
+
+test('invoice: product costs add up, and the total is application + products', async () => {
+  const { invoiceTotals } = await import('../src/records.js');
+  const r = await invoiceJob(); r.invoice.ratePerAcre = '12';
+  const inv = invoiceTotals(r);
+  assert.deepEqual(inv.lines.map(l => l.cost), [250, 18.5]);
+  assert.equal(inv.productCost, 268.5);
+  assert.equal(inv.total, 741.54);
+});
+
+test('invoice: zero, blank, negative or junk rate and costs count as $0', async () => {
+  const { invoiceTotals } = await import('../src/records.js');
+  const r = await invoiceJob();
+  r.invoice.ratePerAcre = '';
+  r.products[0].invoiceCost = ''; r.products[1].invoiceCost = '';
+  let inv = invoiceTotals(r);
+  assert.deepEqual([inv.rate, inv.application, inv.productCost, inv.total], [0, 0, 0, 0]);
+  r.invoice.ratePerAcre = '0'; r.products[0].invoiceCost = '-5'; r.products[1].invoiceCost = 'abc';
+  inv = invoiceTotals(r);
+  assert.deepEqual([inv.rate, inv.application, inv.productCost, inv.total], [0, 0, 0, 0]);
+  r.invoice.ratePerAcre = '0'; r.products[0].invoiceCost = '100';
+  assert.equal(invoiceTotals(r).total, 100, 'zero rate: products only');
+});
+
+test('invoice: unknown acres charge nothing for application and say so; rounding is to the cent', async () => {
+  const { invoiceTotals } = await import('../src/records.js');
+  const r = await invoiceJob(); r.job.acresOverride = ''; r.invoice.ratePerAcre = '12';
+  let inv = invoiceTotals(r);
+  assert.equal(inv.acresKnown, false); assert.equal(inv.application, 0); assert.equal(inv.total, 268.5);
+  r.job.acresOverride = '10.333'; r.invoice.ratePerAcre = '3.333'; r.products.forEach(p => { p.invoiceCost = ''; });
+  inv = invoiceTotals(r);
+  assert.equal(inv.acres, 10.33, 'billed on the acres as printed');
+  assert.equal(inv.application, 34.43); // 10.33 × 3.333 = 34.42989
+});
+
+test('invoice: older saved jobs without an invoice open with $0, and the spreadsheet has the two invoice columns', async () => {
+  const { normalizeRecord, recordsToCSV } = await import('../src/records.js');
+  const r = await invoiceJob(); delete r.invoice;
+  const n = normalizeRecord(structuredClone(r));
+  assert.deepEqual(n.invoice, { number: '', ratePerAcre: '', total: 0 });
+  r.invoice = { number: '1001', ratePerAcre: '12', total: 741.54 };
+  const lines = recordsToCSV([r]).trim().split('\r\n');
+  const head = lines[0].split(','), row = lines[1].split(',');
+  assert.deepEqual(head.slice(-3), ['invoice_rate_per_acre', 'invoice_total', 'invoice_number']);
+  assert.deepEqual(row.slice(-3), ['12.00', '741.54', '1001']);
+});
+
+test('invoice: the printed acres × rate always equals the printed application charge', async () => {
+  const { invoiceTotals } = await import('../src/records.js');
+  const r = await invoiceJob(); r.job.acresOverride = '39.418'; r.invoice.ratePerAcre = '12';
+  const inv = invoiceTotals(r);
+  assert.equal(inv.acres, 39.42);
+  assert.equal(inv.application, 473.04);
+});
+
+test('invoice numbers: 1001 first, then count up from the newest, keeping any prefix and zeros, never reusing one', async () => {
+  const { nextInvoiceNumber, invoiceNumberTaken } = await import('../src/records.js');
+  const job = (number, updatedAt) => ({ id: `j${number}`, updatedAt, invoice: { number } });
+  assert.equal(nextInvoiceNumber([]), '1001');
+  assert.equal(nextInvoiceNumber([job('', 1)]), '1001');
+  assert.equal(nextInvoiceNumber([job('1001', 1), job('1002', 2)]), '1003');
+  assert.equal(nextInvoiceNumber([job('2026-014', 5), job('1007', 1)]), '2026-015', 'follows the newest');
+  assert.equal(nextInvoiceNumber([job('INV-0099', 1)]), 'INV-0100');
+  assert.equal(nextInvoiceNumber([job('1005', 2), job('1006', 1)]), '1007', 'skips a number already used');
+  assert.equal(nextInvoiceNumber([job('Smith', 1)]), 'Smith-1', 'no digits: a suffix is added');
+  const a = { id: 'a', invoice: { number: '1001' } }, b = { id: 'b', invoice: { number: '1001' } };
+  assert.equal(invoiceNumberTaken([a, b], a), true);
+  assert.equal(invoiceNumberTaken([a], a), false, 'its own number is not a clash');
+  assert.equal(invoiceNumberTaken([a, b], { id: 'c', invoice: { number: '' } }), false);
+});
+
+test('payment instructions are part of the business details carried to new jobs', async () => {
+  const { emptyRecord, normalizeRecord } = await import('../src/records.js');
+  assert.equal(emptyRecord().applicator.payment, '');
+  const old = emptyRecord(); delete old.applicator.payment;
+  assert.equal(normalizeRecord(old).applicator.payment, '');
+});

@@ -1,24 +1,25 @@
 // Saved records live in the browser's IndexedDB. If IndexedDB is unavailable (private windows, some
 // embedded viewers) records are kept in memory for the session and the UI says so.
 
-const DB = 'sprayledger', STORE = 'records', EQUIPMENT = 'equipment';
-let dbp = null, memory = null, memoryEq = null;
+const DB = 'sprayledger', STORE = 'records', EQUIPMENT = 'equipment', SETTINGS = 'settings';
+let dbp = null, memory = null, memoryEq = null, memorySet = null;
 
 function open() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
     try {
-      // Version 2 adds saved equipment; saved jobs in version 1 are kept as they are.
-      const req = indexedDB.open(DB, 2);
+      // Version 2 adds saved equipment, version 3 business settings (the logo); saved jobs are kept as they are.
+      const req = indexedDB.open(DB, 3);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(EQUIPMENT)) db.createObjectStore(EQUIPMENT, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: 'key' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     } catch (e) { reject(e); }
-  }).catch(() => { memory = new Map(); memoryEq = new Map(); return null; });
+  }).catch(() => { memory = new Map(); memoryEq = new Map(); memorySet = new Map(); return null; });
   return dbp;
 }
 
@@ -87,4 +88,19 @@ export async function saveEquipment(profile) {
 export async function deleteEquipment(id) {
   const db = await open();
   if (db) await tx(db, 'readwrite', s => s.delete(id), EQUIPMENT); else memoryEq.delete(id);
+}
+
+// ---------- business settings (one value per key, e.g. the logo) ----------
+
+export async function getSetting(key) {
+  const db = await open();
+  const row = db ? await tx(db, 'readonly', s => s.get(key), SETTINGS) : memorySet.get(key);
+  return row?.value ?? null;
+}
+
+export async function setSetting(key, value) {
+  const db = await open();
+  const row = structuredClone({ key, value });
+  if (value == null) { if (db) await tx(db, 'readwrite', s => s.delete(key), SETTINGS); else memorySet.delete(key); return; }
+  if (db) await tx(db, 'readwrite', s => s.put(row), SETTINGS); else memorySet.set(key, row);
 }

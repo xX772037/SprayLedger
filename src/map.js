@@ -83,6 +83,9 @@ export class FieldMap {
     this.follow = true;
   }
 
+  /** Ask for the map pictures again (after the network comes back). */
+  redrawTiles() { this.tiles[this.basemap]?.redraw(); }
+
   setBasemap(name) {
     if (name === this.basemap) return;
     this.map.removeLayer(this.tiles[this.basemap]);

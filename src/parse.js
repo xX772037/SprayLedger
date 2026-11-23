@@ -44,18 +44,42 @@ const COLS = {
   flight: ['flight', 'flight_id', 'sortie', 'mission', 'flight_no', 'flight_number', 'sortie_id'],
 };
 
-export function detectColumns(header) {
+// ---------- maker log profiles ----------
+// A profile maps one maker's export file onto the generic point shape. Each key may set:
+//   cols:     { time, lat, lon, alt, speed, flow, spray, flight: [header names] }, tried before the generic ones
+//   flowUnit: 'lpm' | 'gpm' | 'mlpm' (otherwise read from the flow column's header, as for generic files)
+//   sprayOn:  value => boolean, for makers whose on/off column is not 1/0, true/false or on/off
+//   time:     string => { ms, relative, naive } | null, for makers with an unusual time format
+// Only add a maker from a REAL export file from that maker's app, never from guessed header names,
+// and add a fixture from that file to test/fixtures/logs with a test in test/parse.test.js.
+// No maker has been added yet: no real DJI Agras, XAG or Hylio export file has been available.
+export const LOG_PROFILES = [
+  { id: 'generic', name: 'Other / generic', models: [], note: 'Most CSV, KML and GeoJSON flight logs' },
+];
+export const logProfile = id => LOG_PROFILES.find(p => p.id === id) || LOG_PROFILES[0];
+
+const FLOW_UNIT = { lpm: 1, gpm: L_PER_GAL, mlpm: 0.001 };
+
+/** Column names to try for each field: the profile's own names first, then the generic synonyms. */
+function columnsFor(profile) {
+  if (!profile?.cols) return COLS;
+  const out = {};
+  for (const k of Object.keys(COLS)) out[k] = [...(profile.cols[k] || []).map(norm), ...COLS[k]];
+  return out;
+}
+
+export function detectColumns(header, cols = COLS) {
   const h = header.map(norm);
   const out = {}, used = new Set();
   // Pass 1: exact header names. Pass 2: prefixes ("spray_..."), never reusing a column another field
   // already claimed, so a "spray_rate" or "pump_flow" column is the flow rate and not also the on/off switch.
-  for (const [key, names] of Object.entries(COLS)) {
+  for (const [key, names] of Object.entries(cols)) {
     let idx = -1;
     for (const n of names) { idx = h.indexOf(n); if (idx !== -1 && !used.has(idx)) break; idx = -1; }
     out[key] = idx;
     if (idx !== -1) used.add(idx);
   }
-  for (const [key, names] of Object.entries(COLS)) {
+  for (const [key, names] of Object.entries(cols)) {
     if (out[key] !== -1) continue;
     const idx = h.findIndex((x, i) => !used.has(i) && names.some(n => x.startsWith(n + '_')));
     out[key] = idx;
@@ -94,28 +118,31 @@ export function parseTime(v) {
   return { ms, relative: false, naive };
 }
 
-export function parseFlightCSV(text) {
+export function parseFlightCSV(text, { profile } = {}) {
+  const p = typeof profile === 'string' ? logProfile(profile) : profile;
   const rows = parseCSV(text);
   if (rows.length < 2) throw new Error('The file has no data rows.');
   const header = rows[0];
-  const c = detectColumns(header);
+  const c = detectColumns(header, columnsFor(p));
   if (c.lat === -1 || c.lon === -1) {
     throw new Error('Could not find latitude and longitude columns. Expected headers such as "latitude" and "longitude".');
   }
   const warnings = [];
-  const ff = c.flow !== -1 ? flowFactor(header[c.flow]) : 1;
+  const ff = c.flow === -1 ? 1 : p?.flowUnit ? FLOW_UNIT[p.flowUnit] : flowFactor(header[c.flow]);
+  const readTime = p?.time || parseTime;
+  const isOn = p?.sprayOn || (v => TRUE.has(String(v).trim().toLowerCase()));
   const points = [];
   let relative = false, naive = false, skipped = 0;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const lat = parseFloat(r[c.lat]), lon = parseFloat(r[c.lon]);
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) { skipped++; continue; }
-    const tm = c.time !== -1 ? parseTime(r[c.time]) : null;
+    const tm = c.time !== -1 ? readTime(r[c.time]) : null;
     if (tm?.relative) relative = true;
     if (tm?.naive) naive = true;
     const flow = c.flow !== -1 ? parseFloat(r[c.flow]) * ff : NaN;
     let spray;
-    if (c.spray !== -1) spray = TRUE.has(String(r[c.spray]).trim().toLowerCase());
+    if (c.spray !== -1) spray = isOn(r[c.spray]);
     else spray = Number.isFinite(flow) && flow > 0.05;
     points.push({
       t: tm ? tm.ms : (i - 1) * 1000,
@@ -217,7 +244,7 @@ export function parseKML(text) {
 }
 
 /** Parse any supported file by extension, falling back to sniffing the content. */
-export function parseFile(name, text) {
+export function parseFile(name, text, { profile } = {}) {
   const ext = name.toLowerCase().split('.').pop();
   const t = text.trimStart();
   const trackWarnings = (r, hasFlow) => !r.points.length ? [] : [
@@ -234,6 +261,6 @@ export function parseFile(name, text) {
     const hasFlow = r.points.some(p => Number.isFinite(p.flowLpm));
     return { ...r, warnings: trackWarnings(r, hasFlow), meta: { hasFlow, timeless: r.timeless } };
   }
-  const r = parseFlightCSV(text);
+  const r = parseFlightCSV(text, { profile });
   return { boundary: [], points: r.points, warnings: r.warnings, meta: r.meta };
 }

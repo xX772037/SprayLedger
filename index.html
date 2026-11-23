@@ -18,6 +18,10 @@
       <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M4 22h24M4 26h24" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M8 18c2-6 6-10 8-12 2 2 6 6 8 12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="12" r="2.6" fill="currentColor"/></svg>
       <span>SprayLedger</span>
     </button>
+    <span class="offline-badge" id="offlineBadge" role="status" hidden>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 7.5a12 12 0 0 1 16 0M5 10.6a7.5 7.5 0 0 1 10 0M8 13.6a3 3 0 0 1 4 0M3 3l14 14"/></svg>
+      Offline
+    </span>
     <nav class="appbar-actions" aria-label="Main">
       <button type="button" id="btnJobs" class="btn">My jobs <span class="count" id="recCount">0</span></button>
       <button type="button" id="btnNew" class="btn btn-primary">New job</button>
@@ -116,6 +120,7 @@
       </div>
     </div>
     <p class="note" id="storageNote" hidden></p>
+    <p class="note" id="syncNote" hidden>Jobs marked <b>Not synced</b> were saved while offline. SprayLedger has no cloud backup yet, so every job, synced or not, is kept only on this device. Export to a spreadsheet to keep a copy.</p>
     <ul id="recList" class="job-list"></ul>
     <p class="empty" id="recEmpty">No saved jobs yet. Tap <b>New job</b> to start one, or open the practice job to see how it works.</p>
   </section>
@@ -133,7 +138,8 @@
       <button type="button" role="tab" data-step="spray"><span class="n">3</span><span class="t">Spray</span></button>
       <button type="button" role="tab" data-step="products"><span class="n">4</span><span class="t">Products</span></button>
       <button type="button" role="tab" data-step="finish"><span class="n">5</span><span class="t">Details</span></button>
-      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t">Documents</span></button>
+      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t" data-short="Docs">Documents</span></button>
+      <button type="button" role="tab" data-step="invoice"><span class="n">7</span><span class="t">Invoice</span></button>
     </nav>
 
     <header class="step-head">
@@ -217,6 +223,9 @@
       <div id="paneLog" role="tabpanel" aria-labelledby="tabLog" class="pane" >
         <div class="drop" id="dropzone">
           <p>Pick the log file the drone app or sprayer monitor saved (CSV, KML or GeoJSON). You can also drag files onto this page.</p>
+          <label class="inline-field" for="logProfile" id="logProfileRow">Drone model
+            <select id="logProfile"></select>
+          </label>
           <div class="row-actions">
             <label class="btn btn-primary btn-big file-btn">
               <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">
@@ -414,6 +423,58 @@
       <div class="row-actions finish-actions">
         <button type="button" class="btn btn-danger" id="btnDelete" hidden>Delete this job</button>
       </div>
+    </section>
+
+    <section class="step" data-panel="invoice" role="tabpanel" aria-label="Invoice" hidden>
+      <section class="inv-card" aria-labelledby="invTitle">
+        <label class="inv-rate" for="f_invNo">Invoice number
+          <input id="f_invNo" data-path="invoice.number" autocomplete="off">
+        </label>
+        <p class="sub warn-text" id="invNoWarn" hidden></p>
+        <h3 id="invTitle">Bill to</h3>
+        <dl class="inv-head" id="invHead"></dl>
+        <label class="inv-rate" for="f_invRate">Your rate per acre
+          <span class="money-in"><span aria-hidden="true">$</span><input id="f_invRate" data-path="invoice.ratePerAcre" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></span>
+        </label>
+        <h3>Products you're charging for</h3>
+        <p class="sub">Type what you charge the customer for each product. Leave it at $0 if they supplied it.</p>
+        <div id="invProducts" class="inv-products"></div>
+        <dl class="inv-sum" id="invSum" aria-live="polite"></dl>
+      </section>
+
+      <section class="inv-card" aria-labelledby="invFromTitle">
+        <h3 id="invFromTitle">From you</h3>
+        <p class="sub">Typed once: these carry over to every new job, along with your business name, phone and address from step 5.</p>
+        <label for="f_payment">How customers pay you
+          <textarea id="f_payment" data-path="applicator.payment" rows="3" placeholder="e.g. Due within 30 days. Checks payable to Your Company, or Zelle to (605) 555-0100."></textarea>
+        </label>
+        <div class="logo-row">
+          <div class="logo-preview" id="logoPreview" aria-live="polite"><span class="sub">No logo yet</span></div>
+          <div class="logo-actions">
+            <label class="btn btn-big file-btn">
+              <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/gif">
+              <span id="logoPickLabel">Add your logo</span>
+            </label>
+            <button type="button" class="btn btn-big" id="logoRemove" hidden>Remove logo</button>
+          </div>
+        </div>
+        <p class="sub">Your logo goes on the invoice and the customer report. It's kept in this browser on this device.</p>
+        <p class="sub warn-text" id="logoState" hidden></p>
+      </section>
+      <section class="docs" aria-label="Invoice PDF">
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
+            <h3>Invoice</h3>
+            <p>For the customer: the acres sprayed, your rate, the products and the total due.</p>
+          </div>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" id="invSave">Download PDF</button>
+            <button type="button" class="btn btn-big" id="invSend" hidden>Text or email it</button>
+          </div>
+        </article>
+        <p class="doc-state" id="invState" aria-live="polite"></p>
+      </section>
     </section>
 
     <nav class="step-nav" aria-label="Step navigation">

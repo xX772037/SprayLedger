@@ -32,7 +32,22 @@ Specs and label facts live in `src/catalog.js`, each checked against the maker's
 
 ## Built for easy reading
 
-The app walks through a job in six steps (**Field → Plan → Spray → Products → Details → Documents**), one screen at a time, each with a "Step 2 of 6" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
+The app walks through a job in seven steps (**Field → Plan → Spray → Products → Details → Documents → Invoice**), one screen at a time, each with a "Step 2 of 7" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
+
+## Invoicing
+
+Step 7, **Invoice**, comes after Documents and opens from any job, including finished ones in My jobs.
+
+- It shows the customer, field, date and acres sprayed (from the coverage map, or the acres typed in on step 5).
+- Type **your rate per acre** and, for each product, **what you charge for it**. Both start at $0; leave a product at $0 if the customer supplied it.
+- The total adds itself up: **acres × rate per acre + product charges**. Acres are billed to 2 decimals, as printed, so the customer can check the math. Blank or negative amounts count as $0.
+- **Download PDF** makes an invoice in the same style as the customer report (on phones, **Text or email it** opens the share menu).
+- **Invoice number:** each job gets the next number the first time its invoice is opened: 1001, 1002, and so on, or counting on from your own style (`2026-014` is followed by `2026-015`). Change it any time; the app warns if another job already uses it. The PDF file is named with the number.
+- **How customers pay you:** type it once on the Invoice step (for example "Due within 30 days. Checks payable to…"). It prints under *How to pay* and carries over to every new job with your business name and address.
+- **Your logo:** add a PNG or JPG once on the Invoice step. It prints at the top right of the invoice and the customer report (not the state record). It's shrunk and trimmed to fit, and kept in this browser on this device.
+- The rate, total and number are saved with the job and added to the spreadsheet export as `invoice_rate_per_acre`, `invoice_total` and `invoice_number`.
+
+There are no taxes or discounts yet; add them on the PDF by hand if you need them.
 
 ## End-of-job documents (South Dakota)
 
@@ -55,7 +70,13 @@ Records stay in the browser on the device (IndexedDB); the app has no server of 
 | Open-Meteo | forecast and past weather | the field's latitude and longitude |
 | Planning & Development District III | county parcel lines, owners, address search | the map area or the address typed |
 
-Fonts, the map library and the PDF maker are stored with the app, so nothing is loaded from Google or a CDN. Once a hosted copy has been opened with signal, the app opens without signal too (`sw.js`); maps, weather and parcels need signal, but entering a job, live tracking and making the PDFs work offline.
+Fonts, the map library and the PDF maker are stored with the app, so nothing is loaded from Google or a CDN. Once a hosted copy has been opened with signal, the app opens without signal too (`sw.js`; `test/offline.test.js` checks every app file is stored). With no signal:
+
+- an **Offline** badge shows in the top bar;
+- the map has no satellite picture and says so, but drawing the field and the coverage map still work on its plain background;
+- weather and parcel lookups say they can't load; enter the weather by hand;
+- entering a job, live tracking and making the PDFs all work;
+- jobs saved while offline are marked **Not synced** in My jobs. There is no cloud backup yet, so every job is kept only on this device and the mark stays; export to a spreadsheet to keep a copy.
 
 ## What still needs real-world work
 
@@ -77,7 +98,20 @@ Fonts, the map library and the PDF maker are stored with the app, so nothing is 
 
 No boundary file? Use **Draw boundary** and click the field corners on the map.
 
-> Drone makers export logs differently, and live connections go through each maker's cloud service. The importers here are generic. Before selling to operators of a particular drone, test with that drone's real export files and add any column names it uses to `COLS` in `src/parse.js`.
+### Drone models
+
+Each maker's app writes its log differently. A maker gets its own import profile (column names, flow unit, spray on/off switch and time format, in `LOG_PROFILES` in `src/parse.js`) only once a **real export file** from that maker's app has been checked; column names are never guessed. When the first maker profile is added, a **Drone model** selector appears above *Choose flight log* on the Spray step; until then every file goes through *Other / generic*.
+
+| Drone | Supported now | What to export | Status |
+| --- | --- | --- | --- |
+| DJI Agras T100, T70P, T50, T25 | Only if the file has common column names (generic import) | Not confirmed. DJI does not publish an open Agras log format; some third-party services (for example Airdata) offer CSV or KML downloads for some Agras models. | Needs a real export file |
+| XAG P100 Pro | Only through the generic KML import, untested with a real XAG file | A KML flight log from the XAG One Management Platform (flight list, then Export Report, then KML), as described by a third party (AcreConnect). | Needs a real export file |
+| Hylio AG-272, AG-230 | Only if the file has common column names (generic import) | A report from the Reports tab in AgroSol. Hylio says logs include GPS, altitude, spray rate and speed, but the file layout is not published. | Needs a real export file |
+| Any other drone or sprayer monitor | Yes | CSV, KML or GeoJSON with common column names (table above) | Supported |
+
+**Adding a maker:** put a small real export (a few rows, names removed) in `test/fixtures/logs/`, add a profile to `LOG_PROFILES` with that file's column names, and add a test in `test/parse.test.js` that checks time, GPS, flow and spray on/off from the fixture.
+
+Live connections to drones go through each maker's cloud service and are not built yet; import the log after each flight.
 
 ## Run it
 

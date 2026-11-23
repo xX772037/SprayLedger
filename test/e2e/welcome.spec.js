@@ -14,5 +14,5 @@ test('a first visit opens the welcome page, and its buttons lead into the app', 
   await page.getByRole('button', { name: 'SprayLedger home' }).click();
   await expect(page.locator('#viewHome')).toBeVisible();
   await page.getByRole('button', { name: 'Start a new job' }).first().click();
-  await expect(page.locator('#stepCount')).toHaveText('Step 1 of 6');
+  await expect(page.locator('#stepCount')).toHaveText('Step 1 of 7');
 });

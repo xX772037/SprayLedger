@@ -1,13 +1,13 @@
-import { parseFile } from './parse.js';
+import { parseFile, LOG_PROFILES } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
 import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
-  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
+  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV, invoiceTotals, fmtMoney, nextInvoiceNumber, invoiceNumberTaken,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
-import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
+import { customerReport, stateRecord, invoicePdf, deliverPdf, fileName } from './docs.js';
 import { DRONES, PRODUCTS, PRODUCT_GROUPS, droneById, droneName, planJob, applyCatalogProduct, productsFromJobs, litersToGal, lpmToGpm } from './catalog.js';
-import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment } from './store.js';
+import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment, getSetting, setSetting } from './store.js';
 import { applyProfile, applyCatalogEquipment, profileFromEquipment, isGround, sortProfiles } from './equipment.js';
 import { sampleJob } from './sample.js';
 import { FieldMap } from './map.js';
@@ -40,6 +40,7 @@ const state = {
   parcelsView: { abort: null, list: [] },
   owners: { key: null },
   equipmentList: [],
+  logo: null, // { dataUrl, width, height }: the business logo for the invoice and customer report
 };
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
@@ -97,7 +98,7 @@ async function importFiles(fileList) {
   let relative = false, naive = false;
   for (const f of files) {
     try {
-      const r = parseFile(f.name, await f.text());
+      const r = parseFile(f.name, await f.text(), { profile: $('logProfile').value });
       if (r.boundary.length) boundaries.push(...r.boundary);
       if (r.points.length) tracks.push({ name: f.name, points: r.points });
       if (r.meta?.relativeTime || r.meta?.timeless) relative = true; // clock times can't be taken from this file
@@ -152,7 +153,7 @@ function ensureMap() {
       fmap.setDraft(state.draw.pts);
     },
     onMove: probe,
-    onTileStatus: s => { $('tileNote').hidden = s !== 'blocked'; },
+    onTileStatus: s => showTileNote(s === 'blocked'),
     onMoveEnd: scheduleViewParcels,
     onSearch: findAddress,
   });
@@ -706,6 +707,7 @@ function renderNotices() {
 function fillForm() {
   document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
   renderModelOptions();
+  renderInvoice();
   $('tzRow').hidden = !state.rec.logNaive;
   $('logTz').value = state.rec.logTimes || 'local';
   if (!state.live) $('liveBoom').value = state.rec.equipment.swathFt || 90;
@@ -767,6 +769,7 @@ function renderProducts() {
       <div class="calc"><span>Total used: <b data-calc="total">—</b></span><span>Actual rate: <b data-calc="rate">—</b></span></div>
     </section>`).join('');
   refreshDerived();
+  renderInvoice();
 }
 
 function fieldAcres() {
@@ -837,7 +840,9 @@ function refreshDerived() {
     products: r.products.some(p => p.name) && r.products.filter(p => p.name).every(p => p.rate),
     finish: !!(r.job.farm && r.job.date && r.applicator.name && r.conditions.wind),
     docs: c.complete,
+    invoice: invoiceTotals(r).total > 0,
   };
+  updateInvoiceSums();
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('data-done', !!done[b.dataset.step]));
   renderStats();
 }
@@ -861,8 +866,10 @@ async function refreshList() {
       <span class="j-title">${esc(r.job.field || 'Field not named')}${r.job.farm ? `, ${esc(r.job.farm)}` : ''}</span>
       <span class="j-meta">${r.job.date ? fmtDate(new Date(r.job.date + 'T00:00')) : 'No date'} · ${Number.isFinite(ac) ? `${fmt(ac, 1)} acres` : 'no acres'}${prods.length ? ` · ${esc(prods.join(', '))}` : ''}</span>
       <span class="chip ${c.complete ? 'ok' : 'bad'}">${c.complete ? 'Complete' : `${c.missing.length} missing`}</span>
+      ${r.savedOffline ? '<span class="chip offline">Not synced</span>' : ''}
     </button></li>`;
   }).join('');
+  $('syncNote').hidden = !state.records.some(r => r.savedOffline);
   $('btnDelete').hidden = !state.records.some(r => r.id === state.rec.id);
 }
 
@@ -936,6 +943,51 @@ function loadSample() {
   setTimesFromLog();
   state.dirty = true; $('saveState').textContent = 'Practice job (not saved)';
   renderAll();
+}
+
+// ---------------------------------------------------------------- invoice
+
+/** Give the job the next invoice number the first time its invoice is opened (the applicator can change it). */
+function ensureInvoiceNumber() {
+  const r = state.rec;
+  r.invoice ??= { number: '', ratePerAcre: '', total: 0 };
+  if (String(r.invoice.number || '').trim()) return;
+  r.invoice.number = nextInvoiceNumber(state.records.filter(x => x.id !== r.id));
+  $('f_invNo').value = r.invoice.number;
+  if (!state.practice) markDirty();
+}
+
+/** The product rows with their cost boxes. Rebuilt when the products change, not on every keystroke. */
+function renderInvoice() {
+  const r = state.rec;
+  const rows = r.products.map((p, i) => ({ p, i })).filter(({ p }) => String(p.name || '').trim());
+  $('invProducts').innerHTML = rows.length ? rows.map(({ p, i }) => {
+    const t = productTotals(p, r);
+    return `<div class="inv-line"><div><b>${esc(p.name)}</b><p class="sub">${t ? `${esc(fmt(t.total, 1))} ${esc(t.unit)} used` : 'Amount used not worked out yet'}</p></div>
+      <label class="money-in" aria-label="Charge for ${esc(p.name)}"><span aria-hidden="true">$</span><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" data-invcost="${i}" value="${esc(p.invoiceCost)}"></label></div>`;
+  }).join('') : '<p class="sub">No products on this job yet (step 4).</p>';
+  updateInvoiceSums();
+}
+
+/** The header and the sums. Runs on every change; also keeps the saved total up to date. */
+function updateInvoiceSums() {
+  const r = state.rec;
+  r.invoice ??= { ratePerAcre: '', total: 0 };
+  const inv = invoiceTotals(r);
+  r.invoice.total = inv.total;
+  const taken = !state.practice && invoiceNumberTaken(state.records, r);
+  $('invNoWarn').hidden = !taken;
+  $('invNoWarn').textContent = taken ? `Invoice number ${r.invoice.number} is already used on another job.` : '';
+  const dl = pairs => pairs.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || '—')}</dd></div>`).join('');
+  $('invHead').innerHTML = dl([
+    ['Customer', r.job.farm], ['Field', r.job.field],
+    ['Date', r.job.date ? fmtDate(new Date(r.job.date + 'T00:00')) : ''],
+    ['Acres sprayed', inv.acresKnown ? `${fmt(inv.acres, 2)} acres` : 'Not known yet (step 3 or 5)'],
+  ]);
+  $('invSum').innerHTML = `
+    <dt>Application: ${inv.acresKnown ? `${esc(fmt(inv.acres, 2))} acres` : '0 acres'} × ${esc(fmtMoney(inv.rate))}</dt><dd id="invApp">${esc(fmtMoney(inv.application))}</dd>
+    <dt>Products</dt><dd id="invProd">${esc(fmtMoney(inv.productCost))}</dd>
+    <dt class="total">Total due</dt><dd class="total" id="invTotal">${esc(fmtMoney(inv.total))}</dd>`;
 }
 
 function renderAll() {
@@ -1039,22 +1091,25 @@ function documentMap() {
 }
 
 async function makeDocument(kind, act, btn) {
-  const out = $('docState');
+  const out = kind === 'invoice' ? $('invState') : $('docState');
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = 'Making the PDF…';
   try {
     if (!window.jspdf) throw new Error('The PDF maker did not load. Reload the page and try again.');
-    if (!state.practice) { syncLog(); await saveRecord(state.rec); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList(); }
+    if (!state.practice) { syncLog(); await saveRecord(markOffline(state.rec)); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList(); }
     const ctx = {
       map: documentMap(),
       gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
     };
     const r = state.rec;
-    const doc = kind === 'customer' ? customerReport(r, ctx) : stateRecord(r, ctx);
-    const name = fileName(kind === 'customer' ? 'customer-report' : 'SD-application-record', r);
-    const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
+    ctx.logo = state.logo;
+    const invNo = String(r.invoice?.number || '').trim().replace(/[^A-Za-z0-9]+/g, '-');
+    const doc = kind === 'customer' ? customerReport(r, ctx) : kind === 'invoice' ? invoicePdf(r, ctx) : stateRecord(r, ctx);
+    const name = fileName({ customer: 'customer-report', invoice: invNo ? `invoice-${invNo}` : 'invoice' }[kind] || 'SD-application-record', r);
+    const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : kind === 'invoice' ? `Invoice: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
+    const on = r.job.date ? ` on ${fmtDate(new Date(r.job.date + 'T00:00'))}` : '';
     const how = act === 'send' && shareFiles
-      ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'} on ${fmtDate(new Date(r.job.date + 'T00:00'))}.` : '' })
+      ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'}${on}.` : kind === 'invoice' ? `Invoice for spraying ${r.job.field || 'your field'}${on}.` : '' })
       : await deliverPdf(doc, name, { title, noShare: true });
     out.className = 'doc-state ok';
     out.textContent = how === 'shared' ? 'Sent.' : how === 'cancelled' ? 'Not sent.' : `Downloaded: ${name}`;
@@ -1073,8 +1128,8 @@ const shareFiles = (() => {
 
 // ---------------------------------------------------------------- steps, views and text size
 
-const STEPS = ['field', 'weather', 'spray', 'products', 'finish', 'docs'];
-const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Details', docs: 'Documents' };
+const STEPS = ['field', 'weather', 'spray', 'products', 'finish', 'docs', 'invoice'];
+const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Details', docs: 'Documents', invoice: 'Invoice' };
 const STEP_INFO = {
   field: ['Choose the field', 'Type the field\'s address in the box on the map, then tap the field to use it. Or draw its corners.'],
   weather: ['Plan the job', 'Pick the drone or sprayer, then check whether the weather is right for spraying.'],
@@ -1082,6 +1137,7 @@ const STEP_INFO = {
   products: ['What went in the tank', 'Pick each product from the list, then type the rate from its label.'],
   finish: ['Job details', 'Customer, date and time, weather and applicator. These go on both documents.'],
   docs: ['Documents', 'Check the record is complete, then download the two PDFs.'],
+  invoice: ['Invoice', 'Type your rate per acre and what you charge for each product. The total adds itself up.'],
 };
 
 function showView(name) {
@@ -1098,6 +1154,7 @@ function setStep(name) {
   state.step = name;
   document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
+  if (name === 'invoice') { ensureInvoiceNumber(); renderInvoice(); } // product names may have changed on step 4
   const slot = document.querySelector(`[data-map-slot="${name}"]`);
   const card = $('mapcard');
   if (slot) { slot.appendChild(card); card.hidden = false; requestAnimationFrame(() => { fmap?.invalidate(); if (state.fitPending) renderMap(); }); }
@@ -1120,7 +1177,7 @@ async function autoSave() {
   if (state.practice || !state.dirty || !(state.boundary.length || state.points.length || state.rec.job.field)) return;
   syncLog();
   try {
-    await saveRecord(state.rec);
+    await saveRecord(markOffline(state.rec));
     state.dirty = false;
     $('saveState').textContent = `Saved ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
     refreshList();
@@ -1159,6 +1216,7 @@ function onFieldInput(e) {
     if (t.dataset.path.startsWith('equipment.') && t.dataset.path !== 'equipment.targetGpa' && currentProfile()) eqMessage(`Changed for this job. Tap Save changes to keep it in "${currentProfile().name}" for next time.`);
   }
   else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.type === 'checkbox' ? t.checked : t.value;
+  else if (t.dataset.invcost) state.rec.products[+t.dataset.invcost].invoiceCost = t.value;
   else return;
   markDirty();
   refreshDerived();
@@ -1179,7 +1237,7 @@ $('btnSave').addEventListener('click', async () => {
   state.practice = false; // saving the practice job on purpose makes it a real job
   syncLog();
   try {
-    await saveRecord(state.rec);
+    await saveRecord(markOffline(state.rec));
     state.dirty = false;
     $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`;
     await refreshList();
@@ -1203,6 +1261,10 @@ $('logTz').addEventListener('change', e => {
   syncLog(); analyze(); setTimesFromLog(); markDirty(); renderAll();
 });
 $('liveSource').addEventListener('change', e => { $('baudRow').hidden = e.target.value !== 'serial'; });
+for (const [id, act] of [['invSave', 'save'], ['invSend', 'send']]) {
+  if (act === 'send') $(id).hidden = !shareFiles;
+  $(id).addEventListener('click', e => makeDocument('invoice', act, e.currentTarget));
+}
 document.querySelectorAll('[data-doc]').forEach(b => {
   if (b.dataset.act === 'send') b.hidden = !shareFiles; // phones: open the text/email share menu
   b.addEventListener('click', () => makeDocument(b.dataset.doc, b.dataset.act, b));
@@ -1215,6 +1277,87 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// ---------------------------------------------------------------- business logo
+function renderLogo() {
+  const l = state.logo;
+  $('logoPreview').innerHTML = l ? `<img src="${l.dataUrl}" alt="Your logo">` : '<span class="sub">No logo yet</span>';
+  $('logoPickLabel').textContent = l ? 'Change logo' : 'Add your logo';
+  $('logoRemove').hidden = !l;
+}
+
+/** Shrink a picture to at most 600 x 300 pixels so it stays small in the PDFs and in storage. */
+function readLogo(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // Trim fully transparent edges, so the logo lines up with the page margin.
+      const full = document.createElement('canvas');
+      full.width = img.naturalWidth; full.height = img.naturalHeight;
+      const fx = full.getContext('2d'); fx.drawImage(img, 0, 0);
+      const { data, width: W, height: H } = fx.getImageData(0, 0, full.width, full.height);
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 < 0) { reject(new Error('That picture is empty. Try another file.')); return; }
+      const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+      const scale = Math.min(1, 600 / cw, 300 / ch);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(cw * scale)); c.height = Math.max(1, Math.round(ch * scale));
+      c.getContext('2d').drawImage(full, x0, y0, cw, ch, 0, 0, c.width, c.height);
+      resolve({ dataUrl: c.toDataURL('image/png'), width: c.width, height: c.height });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a picture this browser can open. Try a PNG or JPG.')); };
+    img.src = url;
+  });
+}
+
+$('logoInput').addEventListener('change', async e => {
+  const f = e.target.files?.[0]; e.target.value = '';
+  if (!f) return;
+  const note = $('logoState'); note.hidden = true;
+  try {
+    const logo = await readLogo(f);
+    await setSetting('logo', logo);
+    state.logo = logo; renderLogo();
+  } catch (err) { note.hidden = false; note.textContent = err.message || 'The logo could not be saved.'; }
+});
+$('logoRemove').addEventListener('click', e => confirmClick(e.currentTarget, 'Tap again to remove', async () => {
+  await setSetting('logo', null);
+  state.logo = null; renderLogo();
+}));
+
+// ---------------------------------------------------------------- offline
+// The app's own files come from the service worker (sw.js), so it opens with no signal. Weather and
+// parcel lookups say they can't load; the map keeps drawing and coverage on its plain background.
+// A job saved with no network is marked "Not synced". There is no cloud sync yet, so the mark stays:
+// it never claims the job has left this device.
+function markOffline(rec) { if (!navigator.onLine) rec.savedOffline = true; return rec; }
+function showTileNote(blocked) {
+  $('tileNote').textContent = navigator.onLine
+    ? "The satellite picture can't load here. It shows when the app runs on its own web address."
+    : 'No internet, so the satellite picture can\'t load. You can still draw the field and see the coverage on the plain background.';
+  $('tileNote').hidden = !blocked;
+}
+function updateOnline() {
+  const off = !navigator.onLine;
+  $('offlineBadge').hidden = !off;
+  if (off) showTileNote(true);
+  else { showTileNote(false); fmap?.redrawTiles?.(); }
+}
+addEventListener('online', updateOnline);
+addEventListener('offline', updateOnline);
+updateOnline();
+
+// Drone model for log imports: each maker's profile reads its own column names, units and spray switch.
+// "Other / generic" reads the common column names. Only shown once a maker profile exists to choose from.
+$('logProfile').innerHTML = LOG_PROFILES.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.models.length ? ` (${esc(p.models.join(', '))})` : ''}</option>`).join('');
+$('logProfileRow').hidden = LOG_PROFILES.length < 2;
+try { const saved = localStorage.getItem('sprayledger.logprofile'); if (saved && LOG_PROFILES.some(p => p.id === saved)) $('logProfile').value = saved; } catch { /* private mode */ }
+$('logProfile').addEventListener('change', e => { try { localStorage.setItem('sprayledger.logprofile', e.target.value); } catch { /* private mode */ } });
 for (const id of ['homeStart', 'homeStart2']) $(id).addEventListener('click', () => $('btnNew').click());
 $('homeSample').addEventListener('click', () => $('btnSample').click());
 
@@ -1412,6 +1555,8 @@ if ('serviceWorker' in navigator && !embedded && (location.protocol === 'https:'
     : 'This browser is not keeping data, so jobs last only until you close it. Export to keep them.';
   await refreshList();
   await loadEquipmentList();
+  try { state.logo = await getSetting('logo'); } catch { state.logo = null; }
+  renderLogo();
   if (state.records.length) {
     loadRecord(state.records[0]);
     showView('jobs');

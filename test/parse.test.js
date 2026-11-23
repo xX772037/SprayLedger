@@ -86,3 +86,49 @@ test('KML and GeoJSON tracks without times get no made-up times', () => {
   const gj = parseGeoJSON({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-97.9, 43.3], [-97.9, 43.3001]] } });
   assert.ok(gj.points.every(p => p.t === null));
 });
+
+// ---- maker log profiles (the mechanism; no real maker profile exists yet, see LOG_PROFILES) ----
+import { LOG_PROFILES, logProfile, detectColumns } from '../src/parse.js';
+
+test('the generic profile is the default and reads files exactly as before', () => {
+  assert.equal(LOG_PROFILES[0].id, 'generic');
+  assert.equal(logProfile('no-such-maker').id, 'generic');
+  const csv = 'time,lat,lon,flow_l_min\n2026-06-14T10:00:00Z,43.3,-97.9,4.5\n2026-06-14T10:00:01Z,43.30001,-97.9,0\n';
+  const a = parseFlightCSV(csv), b = parseFlightCSV(csv, { profile: 'generic' });
+  assert.deepEqual(a.points, b.points);
+  assert.deepEqual(b.points.map(p => p.spray), [true, false]);
+});
+
+// A made-up profile used only to test the mechanism. It is NOT a real maker's format.
+const TEST_PROFILE = {
+  id: 'test-only', name: 'Test only', models: [],
+  cols: { time: ['Rec Time'], lat: ['Lat N'], lon: ['Lon E'], flow: ['Pump Out'], spray: ['Valve'], alt: ['AGL'], speed: ['GS'] },
+  flowUnit: 'gpm',
+  sprayOn: v => String(v).trim() === 'OPEN',
+  time: s => ({ ms: Date.UTC(2026, 5, 14, 10, 0, Number(s)), relative: false, naive: false }),
+};
+
+test('a profile maps its own columns, flow unit, spray switch and time format', () => {
+  const csv = 'Rec Time,Lat N,Lon E,AGL,GS,Pump Out,Valve\n0,43.3,-97.9,3,5,1.0,OPEN\n1,43.30001,-97.9,3.1,5.2,1.0,CLOSED\n';
+  const r = parseFlightCSV(csv, { profile: TEST_PROFILE });
+  assert.deepEqual(r.points.map(p => p.t), [Date.UTC(2026, 5, 14, 10, 0, 0), Date.UTC(2026, 5, 14, 10, 0, 1)]);
+  assert.equal(r.points[0].lat, 43.3); assert.equal(r.points[0].lon, -97.9);
+  assert.equal(r.points[1].alt, 3.1); assert.equal(r.points[1].speed, 5.2);
+  assert.ok(Math.abs(r.points[0].flowLpm - 3.785411784) < 1e-9, 'gal/min converted to L/min');
+  assert.deepEqual(r.points.map(p => p.spray), [true, false]);
+});
+
+test('a profile still falls back to the generic names for columns it does not list', () => {
+  const c = detectColumns(['Rec Time', 'latitude', 'longitude', 'Pump Out'], undefined);
+  assert.equal(c.lat, 1);
+  const r = parseFlightCSV('Rec Time,latitude,longitude,Pump Out\n0,43.3,-97.9,2\n', { profile: TEST_PROFILE });
+  assert.equal(r.points[0].lat, 43.3);
+  assert.ok(r.points[0].flowLpm > 7, 'profile flow unit applied');
+});
+
+test('parseFile passes the chosen profile to CSV files and ignores it for KML', () => {
+  const r = parseFile('log.csv', 'Rec Time,Lat N,Lon E,Pump Out,Valve\n0,43.3,-97.9,1,OPEN\n', { profile: TEST_PROFILE });
+  assert.equal(r.points[0].spray, true);
+  const k = parseFile('t.kml', '<kml><LineString><coordinates>-97.9,43.3 -97.9,43.3001</coordinates></LineString></kml>', { profile: TEST_PROFILE });
+  assert.equal(k.points.length, 2);
+});
