@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { blockOutsideServices } from './helpers.js';
+import { readFileSync } from 'node:fs';
+import { blockOutsideServices, pdfText } from './helpers.js';
 
 const STEPS = [
   { key: 'field', tab: 'Field', title: 'Choose the field' },
@@ -36,15 +37,21 @@ test('the sample job walks through all seven steps and ends with both PDF downlo
   await page.locator('.steps').getByRole('tab', { name: /Documents/ }).click();
   const downloads = page.locator('[data-doc][data-act="save"]');
   await expect(downloads).toHaveCount(2);
+  // What each PDF must say for the practice job: its products, their totals, and the re-entry time.
+  const mustSay = {
+    customer: ['Example fungicide (sample)', 'Example adjuvant (sample)', '331.6 fl oz', '10.4 pt', '82.9 gallons', 'Keep people out until:', 'Jun 14, 2026, 8:33 PM'],
+    state: ['Example fungicide', 'Example adjuvant', '2.591 gal', '1.295 gal', '82.9 gal', 'Jun 14, 2026, 8:33 PM'],
+  };
   for (const kind of ['customer', 'state']) {
     const button = page.locator(`[data-doc="${kind}"][data-act="save"]`);
     await expect(button).toBeVisible();
     await expect(button).toHaveText('Download PDF');
     const [download] = await Promise.all([page.waitForEvent('download'), button.click()]);
     expect(download.suggestedFilename()).toMatch(/\.pdf$/);
-    const stream = await download.createReadStream();
-    const first = await new Promise(res => stream.once('data', res));
-    expect(first.subarray(0, 5).toString()).toBe('%PDF-');
+    const buf = readFileSync(await download.path());
+    expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
+    const text = await pdfText(buf);
+    for (const s of mustSay[kind]) expect(text, `${kind} PDF should say "${s}"`).toContain(s);
   }
   expect(errors).toEqual([]);
 });

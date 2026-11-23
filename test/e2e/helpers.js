@@ -15,3 +15,19 @@ export async function tileValue(page, label) {
   const text = (await tile.locator('.v').innerText()).replace(/,/g, '');
   return parseFloat(text);
 }
+
+/**
+ * The text of a PDF made by the app: inflate each compressed page stream and join its (...) Tj text runs.
+ * Good enough to check what a document says; not a general PDF reader.
+ */
+export async function pdfText(buffer) {
+  const { inflateSync } = await import('node:zlib');
+  const bin = buffer.toString('latin1');
+  let out = '';
+  for (const m of bin.matchAll(/(?<!end)stream\r?\n/g)) {
+    const start = m.index + m[0].length, end = bin.indexOf('endstream', start);
+    if (end < 0) break;
+    try { out += inflateSync(buffer.subarray(start, end)).toString('latin1') + '\n'; } catch { /* not compressed text */ }
+  }
+  return (out.match(/\((?:\\.|[^\\)])*\)\s*Tj/g) || []).map(s => s.slice(1, s.lastIndexOf(')')).replace(/\\(.)/g, '$1')).join(' ');
+}

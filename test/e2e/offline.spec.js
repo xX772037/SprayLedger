@@ -33,3 +33,59 @@ test('after one visit, the app opens with no network and shows all the steps', a
   await expect(page.locator('#syncNote')).toBeVisible();
   await context.setOffline(false);
 });
+
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = new URL('../../', import.meta.url);
+const listFiles = dir => readdirSync(new URL(`${dir}/`, ROOT), { withFileTypes: true })
+  .flatMap(d => d.isDirectory() ? listFiles(`${dir}/${d.name}`) : [`${dir}/${d.name}`]);
+
+test('the offline store really holds the page, styles, every src/*.js and every vendor file', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  const cached = await page.evaluate(async () => {
+    const out = [];
+    for (const name of await caches.keys()) for (const req of await (await caches.open(name)).keys()) out.push(new URL(req.url).pathname.slice(1));
+    return out;
+  });
+  const want = ['index.html', 'styles.css', ...listFiles('src'), ...listFiles('vendor').filter(f => !/LICENSE$/.test(f))];
+  const missing = want.filter(f => !cached.includes(f));
+  expect(missing).toEqual([]);
+});
+
+test('offline: draw a field and load a log, and the coverage shows on the plain background', async ({ page, context }) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await page.goto('/');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('#offlineBadge')).toBeVisible();
+
+  // A new job: draw the field's corners on the map with no satellite picture.
+  await page.getByRole('button', { name: 'New job', exact: true }).click();
+  await expect(page.locator('#tileNote')).toContainText('No internet');
+  // Zoom in on where the log will be, using the map's own coordinate search (no network needed).
+  await page.locator('#gotoInput').fill('43.3014, -97.9');
+  await page.locator('#gotoInput').press('Enter');
+  await page.locator('#btnDraw').click();
+  const box = await page.locator('#map').boundingBox();
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  for (const [dx, dy] of [[-120, -110], [120, -110], [120, 110], [-120, 110]]) await page.mouse.click(cx + dx, cy + dy);
+  await page.locator('#drawDone').click();
+  await expect(page.locator('#drawBar')).toBeHidden();
+
+  // Load a log on the Spray step: coverage is worked out and drawn without the network.
+  await page.locator('.steps [data-step="spray"]').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('#paneLog label.file-btn').click();
+  await (await chooser).setFiles(fileURLToPath(new URL('./fixtures/control-log.csv', import.meta.url)));
+  await expect(page.locator('#stats')).toContainText('Acres sprayed');
+  await expect(page.locator('#stats')).toContainText(/\d%\s*of [\d.]+ acres/); // coverage of the drawn field
+  await expect(page.locator('.coverage-overlay')).toHaveCount(1);
+  expect(errors).toEqual([]);
+  await context.setOffline(false);
+});

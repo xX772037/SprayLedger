@@ -136,6 +136,7 @@ async function importFiles(fileList) {
 }
 
 function syncLog() {
+  flushReanalyze();
   state.rec.log = state.points.length || state.boundary.length ? { points: packPoints(state.points), boundary: state.boundary } : null;
 }
 
@@ -1151,6 +1152,7 @@ function showView(name) {
 }
 
 function setStep(name) {
+  flushReanalyze();
   state.step = name;
   document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
@@ -1202,8 +1204,14 @@ function confirmClick(btn, label, fn) {
 let swathTimer;
 function scheduleReanalyze() {
   clearTimeout(swathTimer);
-  swathTimer = setTimeout(() => { analyze(); renderMap(); renderGaps(); refreshDerived(); }, 300);
+  swathTimer = setTimeout(runReanalyze, 300);
 }
+function runReanalyze() { swathTimer = null; analyze(); renderMap(); renderGaps(); refreshDerived(); }
+/**
+ * Run a waiting recalculation now. Called before anything uses the acres (saving, PDFs, changing step):
+ * otherwise a save within 300 ms of a swath change would store the old acres.
+ */
+function flushReanalyze() { if (swathTimer) { clearTimeout(swathTimer); runReanalyze(); } }
 
 function onFieldInput(e) {
   const t = e.target;

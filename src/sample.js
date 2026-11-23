@@ -79,7 +79,7 @@ export function sampleJob() {
 
   return {
     csv,
-    fileName: 'sample-agras-flight-2026-06-14.csv',
+    fileName: 'sample-flight-log-2026-06-14.csv',
     boundary,
     record: {
       job: {

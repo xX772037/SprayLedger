@@ -76,3 +76,45 @@ test('invoice numbers count up, payment instructions carry to the next job, and 
   await expect(page.locator('#logoPreview img')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('invoice edge cases on screen: zero acres, zero rate, no cost, no products, rate with no products, negative acres', async ({ page }) => {
+  await blockOutsideServices(page);
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start a new job' }).first().click();
+  const go = async step => page.locator(`.steps [data-step="${step}"]`).click();
+  const setAcres = async v => {
+    await go('finish');
+    if (!(await page.locator('#f_acres').isVisible())) await page.getByText('Change acres or gallons').click();
+    await page.locator('#f_acres').fill(v);
+  };
+  const total = async () => { await go('invoice'); return page.locator('#invTotal').innerText(); };
+  const ok = t => { expect(t).toMatch(/^\$\d{1,3}(,\d{3})*\.\d{2}$/); expect(t).not.toContain('NaN'); expect(t).not.toContain('-'); };
+  const results = {};
+
+  // No products at all, nothing entered.
+  await go('products'); // a new job has one blank product row, which is not a product
+  results['no products, no rate'] = await total();
+  // A rate but no products.
+  await setAcres('40'); await go('invoice'); await page.locator('#f_invRate').fill('12');
+  results['rate but no products'] = await total();
+  // A product with no cost entered.
+  await go('products'); await page.locator('#p0_pick').selectOption({ label: 'Roundup PowerMAX 3' }); await page.locator('#p0_rate').fill('32');
+  results['product with no cost'] = await total();
+  // Zero rate per acre, with a product cost.
+  await page.locator('#f_invRate').fill('0'); await page.locator('[data-invcost]').first().fill('250');
+  results['zero rate'] = await total();
+  // Zero acres.
+  await page.locator('#f_invRate').fill('12'); await setAcres('0');
+  results['zero acres'] = await total();
+  // Negative acres typed by mistake.
+  await setAcres('-5');
+  results['negative acres'] = await total();
+
+  for (const t of Object.values(results)) ok(t);
+  expect(results).toEqual({
+    'no products, no rate': '$0.00', 'rate but no products': '$480.00', 'product with no cost': '$480.00',
+    'zero rate': '$250.00', 'zero acres': '$250.00', 'negative acres': '$250.00',
+  });
+  expect(errors).toEqual([]);
+});

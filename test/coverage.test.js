@@ -103,3 +103,15 @@ test('a sparse log reports dropped pauses and jumps instead of hiding them', () 
   const c = computeCoverage({ points: [...pts.slice(0, 101), ...late], boundary: square(100), swathM: 10 });
   assert.equal(c.stats.dropped.gaps, 1);
 });
+
+test('the spray_rate fixture and its control log (flow_l_min + spraying) give the same coverage and volume', async () => {
+  const { readFileSync } = await import('node:fs');
+  const read = n => readFileSync(new URL(`./e2e/fixtures/${n}`, import.meta.url), 'utf8');
+  const a = parseFlightCSV(read('spray-rate-log.csv')), b = parseFlightCSV(read('control-log.csv'));
+  assert.equal(a.meta.hasSpray, false, 'spray_rate log: no spray column, spraying comes from flow');
+  assert.equal(b.meta.hasSpray, true);
+  const ca = computeCoverage({ points: a.points, swathM: 7 }), cb = computeCoverage({ points: b.points, swathM: 7 });
+  assert.ok(ca.stats.sprayedM2 > 0 && ca.stats.volumeL > 0);
+  assert.ok(Math.abs(ca.stats.sprayedM2 - cb.stats.sprayedM2) < 1e-6, `area ${ca.stats.sprayedM2} vs ${cb.stats.sprayedM2}`);
+  assert.ok(Math.abs(ca.stats.volumeL - cb.stats.volumeL) < 1e-9, `volume ${ca.stats.volumeL} vs ${cb.stats.volumeL}`);
+});
