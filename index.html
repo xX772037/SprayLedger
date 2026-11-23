@@ -217,6 +217,9 @@
       <div id="paneLog" role="tabpanel" aria-labelledby="tabLog" class="pane" >
         <div class="drop" id="dropzone">
           <p>Pick the log file the drone app or sprayer monitor saved (CSV, KML or GeoJSON). You can also drag files onto this page.</p>
+          <label class="inline-field" for="logProfile" id="logProfileRow">Drone model
+            <select id="logProfile"></select>
+          </label>
           <div class="row-actions">
             <label class="btn btn-primary btn-big file-btn">
               <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">

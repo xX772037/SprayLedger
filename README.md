@@ -77,7 +77,20 @@ Fonts, the map library and the PDF maker are stored with the app, so nothing is 
 
 No boundary file? Use **Draw boundary** and click the field corners on the map.
 
-> Drone makers export logs differently, and live connections go through each maker's cloud service. The importers here are generic. Before selling to operators of a particular drone, test with that drone's real export files and add any column names it uses to `COLS` in `src/parse.js`.
+### Drone models
+
+Each maker's app writes its log differently. A maker gets its own import profile (column names, flow unit, spray on/off switch and time format, in `LOG_PROFILES` in `src/parse.js`) only once a **real export file** from that maker's app has been checked; column names are never guessed. When the first maker profile is added, a **Drone model** selector appears above *Choose flight log* on the Spray step; until then every file goes through *Other / generic*.
+
+| Drone | Supported now | What to export | Status |
+| --- | --- | --- | --- |
+| DJI Agras T100, T70P, T50, T25 | Only if the file has common column names (generic import) | Not confirmed. DJI does not publish an open Agras log format; some third-party services (for example Airdata) offer CSV or KML downloads for some Agras models. | Needs a real export file |
+| XAG P100 Pro | Only through the generic KML import, untested with a real XAG file | A KML flight log from the XAG One Management Platform (flight list, then Export Report, then KML), as described by a third party (AcreConnect). | Needs a real export file |
+| Hylio AG-272, AG-230 | Only if the file has common column names (generic import) | A report from the Reports tab in AgroSol. Hylio says logs include GPS, altitude, spray rate and speed, but the file layout is not published. | Needs a real export file |
+| Any other drone or sprayer monitor | Yes | CSV, KML or GeoJSON with common column names (table above) | Supported |
+
+**Adding a maker:** put a small real export (a few rows, names removed) in `test/fixtures/logs/`, add a profile to `LOG_PROFILES` with that file's column names, and add a test in `test/parse.test.js` that checks time, GPS, flow and spray on/off from the fixture.
+
+Live connections to drones go through each maker's cloud service and are not built yet; import the log after each flight.
 
 ## Run it
 

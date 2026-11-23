@@ -1,4 +1,4 @@
-import { parseFile } from './parse.js';
+import { parseFile, LOG_PROFILES } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
 import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
@@ -97,7 +97,7 @@ async function importFiles(fileList) {
   let relative = false, naive = false;
   for (const f of files) {
     try {
-      const r = parseFile(f.name, await f.text());
+      const r = parseFile(f.name, await f.text(), { profile: $('logProfile').value });
       if (r.boundary.length) boundaries.push(...r.boundary);
       if (r.points.length) tracks.push({ name: f.name, points: r.points });
       if (r.meta?.relativeTime || r.meta?.timeless) relative = true; // clock times can't be taken from this file
@@ -1215,6 +1215,13 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// Drone model for log imports: each maker's profile reads its own column names, units and spray switch.
+// "Other / generic" reads the common column names. Only shown once a maker profile exists to choose from.
+$('logProfile').innerHTML = LOG_PROFILES.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.models.length ? ` (${esc(p.models.join(', '))})` : ''}</option>`).join('');
+$('logProfileRow').hidden = LOG_PROFILES.length < 2;
+try { const saved = localStorage.getItem('sprayledger.logprofile'); if (saved && LOG_PROFILES.some(p => p.id === saved)) $('logProfile').value = saved; } catch { /* private mode */ }
+$('logProfile').addEventListener('change', e => { try { localStorage.setItem('sprayledger.logprofile', e.target.value); } catch { /* private mode */ } });
 for (const id of ['homeStart', 'homeStart2']) $(id).addEventListener('click', () => $('btnNew').click());
 $('homeSample').addEventListener('click', () => $('btnSample').click());
 
