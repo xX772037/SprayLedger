@@ -62,3 +62,19 @@ test('KML polygon with inner boundary and gx:Track', () => {
   assert.equal(r.points.length, 2);
   assert.equal(r.points[1].t - r.points[0].t, 2000);
 });
+
+test('a spray_rate or pump_flow column (L/min) is flow, and points with flow are spraying', () => {
+  for (const col of ['spray_rate', 'pump_flow']) {
+    const csv = `time,lat,lon,${col}\n2026-06-14T10:00:00Z,43.3,-97.9,4.5\n2026-06-14T10:00:01Z,43.30001,-97.9,4.5\n2026-06-14T10:00:02Z,43.30002,-97.9,0\n`;
+    const r = parseFlightCSV(csv);
+    assert.deepEqual(r.points.map(p => p.spray), [true, true, false], col);
+    assert.equal(r.points[0].flowLpm, 4.5, col);
+    assert.ok(!r.warnings.some(w => /No spraying found/.test(w)), col);
+  }
+});
+
+test('a log with zero spraying points gets a warning', () => {
+  const r = parseFlightCSV('time,lat,lon,spray_rate\n2026-06-14T10:00:00Z,43.3,-97.9,0\n2026-06-14T10:00:01Z,43.30001,-97.9,0\n');
+  assert.ok(r.points.every(p => !p.spray));
+  assert.match(r.warnings.join(' '), /No spraying found/);
+});

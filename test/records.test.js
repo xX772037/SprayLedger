@@ -84,3 +84,15 @@ test('CSV export escapes quotes and writes one row per product', () => {
   assert.equal(rows[2][h.indexOf('Total product applied')], '10.50 pt');
   assert.equal(rows[1][h.indexOf('Re-entry allowed')], '2026-06-14 20:33');
 });
+
+test('one product with unknown REI gives no re-entry time and an incomplete record', async () => {
+  const { emptyRecord, reentryTime, complianceCheck, missingRei } = await import('../src/records.js');
+  const r = emptyRecord();
+  r.job = { ...r.job, date: '2026-06-14', start: '06:42', end: '08:33' };
+  r.products = [{ ...r.products[0], name: 'Known', rate: '1', rei: '48' }, { ...r.products[0], name: 'Unknown', rate: '1', rei: '' }];
+  assert.equal(reentryTime(r), null);           // not 48 h from the known product alone
+  assert.deepEqual(missingRei(r).map(p => p.name), ['Unknown']);
+  const c = complianceCheck(r);
+  assert.equal(c.complete, false);
+  assert.ok(c.missing.some(m => m.ref === 'REI'));
+});

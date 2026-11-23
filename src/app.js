@@ -812,7 +812,7 @@ function refreshDerived() {
   const re = reentryTime(r), hv = harvestDate(r), noRei = missingRei(r);
   const maxOf = k => Math.max(...r.products.map(p => Number(p[k])).filter(Number.isFinite));
   $('intervals').innerHTML = `
-    <div class="interval${re ? '' : noRei.length ? ' unknown' : ' na'}"><span class="k">Keep people out until</span><span class="v">${re ? fmtDateTime(re) : noRei.length ? 'Unknown' : 'Enter the re-entry hours and finish time'}</span>${re ? `<span>${maxOf('rei')}-hour re-entry interval</span>` : noRei.length ? `<span>Enter the re-entry hours from the label for: ${esc(noRei.map(p => p.name).join(', '))}</span>` : ''}</div>
+    <div class="interval${re ? '' : noRei.length ? ' unknown' : ' na'}"><span class="k">Keep people out until</span><span class="v">${re ? fmtDateTime(re) : noRei.length ? 'Re-entry time unknown — check the label' : 'Enter the re-entry hours and finish time'}</span>${re ? `<span>${maxOf('rei')}-hour re-entry interval</span>` : noRei.length ? `<span>Enter the re-entry hours from the label for: ${esc(noRei.map(p => p.name).join(', '))}</span>` : ''}</div>
     <div class="interval${hv ? '' : ' na'}"><span class="k">Do not harvest before</span><span class="v">${hv ? fmtDate(hv) : 'Enter the pre-harvest days and date'}</span>${hv ? `<span>${maxOf('phi')}-day pre-harvest interval</span>` : ''}</div>`;
 
   const c = complianceCheck(r);

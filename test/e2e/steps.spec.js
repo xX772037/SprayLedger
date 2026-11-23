@@ -46,3 +46,16 @@ test('the sample job walks through all six steps and ends with both PDF download
   }
   expect(errors).toEqual([]);
 });
+
+test('a product with unknown REI shows a warning on the Documents step instead of a time', async ({ page }) => {
+  await blockOutsideServices(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: /My jobs/ }).click();
+  await page.getByRole('button', { name: 'Open the practice job' }).click();
+  await page.locator('.steps').getByRole('tab', { name: /Products/ }).click();
+  const rei = page.locator('[data-panel="products"] input[data-prod="rei"]').first();
+  await rei.fill('');
+  await page.locator('.steps').getByRole('tab', { name: /Documents/ }).click();
+  await expect(page.locator('#intervals')).toContainText('Re-entry time unknown — check the label');
+  await expect(page.locator('#checklist li.miss')).toContainText(['Re-entry hours for every pesticide']);
+});

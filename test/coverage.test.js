@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { computeCoverage } from '../src/coverage.js';
 import { makeProjection, boundaryArea } from '../src/geo.js';
 import { sampleJob } from '../src/sample.js';
-import { parseFile } from '../src/parse.js';
+import { parseFile, parseFlightCSV } from '../src/parse.js';
 
 const proj = makeProjection(41.9, -93.5);
 const LL = (x, y) => proj.toLatLon(x, y);
@@ -76,4 +76,14 @@ test('sample job analyses to plausible numbers', () => {
   assert.ok(c.stats.coveragePct > 94 && c.stats.coveragePct < 99.5);
   assert.ok(c.gaps.some(g => g.areaM2 > 400 && g.areaM2 < 800), 'the clogged pass shows up as a gap');
   assert.ok(c.flights.length >= 8);
+});
+
+test('a CSV whose flow column is spray_rate (L/min) gives coverage and volume above zero', () => {
+  const t0 = Date.parse('2026-06-14T10:00:00Z');
+  const rows = passes(10).map(p => `${new Date(t0 + p.t).toISOString()},${p.lat},${p.lon},${p.flowLpm}`);
+  const { points } = parseFlightCSV(`time,lat,lon,spray_rate\n${rows.join('\n')}\n`);
+  assert.ok(points.some(p => p.spray));
+  const c = computeCoverage({ points, boundary: square(100), swathM: 10 });
+  assert.ok(c.stats.coveragePct > 99, `coverage ${c.stats.coveragePct}`);
+  assert.ok(c.stats.volumeL > 0, `volume ${c.stats.volumeL}`);
 });
