@@ -11,7 +11,7 @@ test('a flight log whose flow column is named spray_rate gives coverage and gall
   await page.goto('/');
 
   // Start a blank job so only this log counts.
-  await page.getByRole('button', { name: 'New job' }).click();
+  await page.getByRole('button', { name: 'New job', exact: true }).click();
   await expect(page.locator('#jobTitle')).toHaveText('New job');
   await page.locator('.steps').getByRole('tab', { name: /Spray/ }).click();
 
