@@ -1,26 +1,31 @@
 // Saved records live in the browser's IndexedDB. If IndexedDB is unavailable (private windows, some
 // embedded viewers) records are kept in memory for the session and the UI says so.
 
-const DB = 'sprayledger', STORE = 'records';
-let dbp = null, memory = null;
+const DB = 'sprayledger', STORE = 'records', EQUIPMENT = 'equipment';
+let dbp = null, memory = null, memoryEq = null;
 
 function open() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
     try {
-      const req = indexedDB.open(DB, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+      // Version 2 adds saved equipment; saved jobs in version 1 are kept as they are.
+      const req = indexedDB.open(DB, 2);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(EQUIPMENT)) db.createObjectStore(EQUIPMENT, { keyPath: 'id' });
+      };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     } catch (e) { reject(e); }
-  }).catch(() => { memory = new Map(); return null; });
+  }).catch(() => { memory = new Map(); memoryEq = new Map(); return null; });
   return dbp;
 }
 
-function tx(db, mode, fn) {
+function tx(db, mode, fn, store = STORE) {
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const r = fn(t.objectStore(STORE));
+    const t = db.transaction(store, mode);
+    const r = fn(t.objectStore(store));
     t.oncomplete = () => resolve(r?.result);
     t.onerror = () => reject(t.error);
   });
@@ -62,4 +67,24 @@ export function packPoints(points) {
 
 export function unpackPoints(c) {
   return c.t.map((t, i) => ({ t, lat: c.lat[i], lon: c.lon[i], flowLpm: c.flow[i] ?? NaN, spray: !!c.spray[i], flight: c.flight[i] }));
+}
+
+// ---------- saved equipment ("My equipment") ----------
+
+export async function listEquipment() {
+  const db = await open();
+  const all = db ? await tx(db, 'readonly', s => s.getAll(), EQUIPMENT) : [...memoryEq.values()];
+  return all.filter(p => p && p.id);
+}
+
+export async function saveEquipment(profile) {
+  const copy = structuredClone({ ...profile, updatedAt: Date.now() });
+  const db = await open();
+  if (db) await tx(db, 'readwrite', s => s.put(copy), EQUIPMENT); else memoryEq.set(copy.id, copy);
+  return copy;
+}
+
+export async function deleteEquipment(id) {
+  const db = await open();
+  if (db) await tx(db, 'readwrite', s => s.delete(id), EQUIPMENT); else memoryEq.delete(id);
 }

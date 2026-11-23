@@ -9,24 +9,32 @@
 // tankL: spray tank. flowLpm: rated spray flow with the standard nozzles (null when sources disagree).
 // swathFt: a conservative starting swath inside the maker's range; set your own calibrated swath.
 export const DRONES = [
-  { id: 'dji-t100', make: 'DJI', model: 'Agras T100', tankL: 100, flowLpm: 30, swathFt: 33,
+  { id: 'dji-t100', make: 'DJI', model: 'Agras T100', tankL: 100, flowLpm: 30, swathFt: 33, speedMph: 15,
     spec: '100 L tank, 30 L/min (40 with four sprinklers). Swath roughly 5–11 m depending on height and nozzles.' },
-  { id: 'dji-t70p', make: 'DJI', model: 'Agras T70P', tankL: 70, flowLpm: 30, swathFt: 30,
+  { id: 'dji-t70p', make: 'DJI', model: 'Agras T70P', tankL: 70, flowLpm: 30, swathFt: 30, speedMph: 15,
     spec: '70 L tank, 30 L/min (40 with four sprinklers), 4–11 m swath.' },
-  { id: 'dji-t50', make: 'DJI', model: 'Agras T50', tankL: 40, flowLpm: 16, swathFt: 30,
+  { id: 'dji-t50', make: 'DJI', model: 'Agras T50', tankL: 40, flowLpm: 16, swathFt: 30, speedMph: 15,
     spec: '40 L tank, 16 L/min with two sprinklers (24 with four), 4–11 m swath at 3 m height.' },
-  { id: 'dji-t25', make: 'DJI', model: 'Agras T25', tankL: 20, flowLpm: 16, swathFt: 20,
+  { id: 'dji-t25', make: 'DJI', model: 'Agras T25', tankL: 20, flowLpm: 16, swathFt: 20, speedMph: 15,
     spec: '20 L tank, 16 L/min with two sprinklers (24 with four), 4–7 m swath.' },
-  { id: 'xag-p100pro', make: 'XAG', model: 'P100 Pro', tankL: 50, flowLpm: 22, swathFt: 26,
+  { id: 'xag-p100pro', make: 'XAG', model: 'P100 Pro', tankL: 50, flowLpm: 22, swathFt: 26, speedMph: 15,
     spec: '50 L tank, 22 L/min dual pump, 5–10 m swath.' },
-  { id: 'hylio-ag272', make: 'Hylio', model: 'AG-272', tankL: 68, flowLpm: null, swathFt: 35,
+  { id: 'hylio-ag272', make: 'Hylio', model: 'AG-272', tankL: 68, flowLpm: null, swathFt: 35, speedMph: 15,
     spec: '18 gal (68 L) tank, swath up to 40 ft. Published flow rates disagree: enter yours.' },
-  { id: 'hylio-ag230', make: 'Hylio', model: 'AG-230', tankL: 30, flowLpm: null, swathFt: 30,
+  { id: 'hylio-ag230', make: 'Hylio', model: 'AG-230', tankL: 30, flowLpm: null, swathFt: 30, speedMph: 15,
     spec: '8 gal (two 4 gal tanks), swath up to 35 ft. Published flow rates vary: enter yours.' },
-  { id: 'ground', make: '', model: 'Ground sprayer', tankL: null, flowLpm: null, swathFt: 90, ground: true, maxMph: 12,
-    spec: 'Enter your boom width, tank size and pump flow.' },
-  { id: 'other', make: '', model: 'Other drone', tankL: null, flowLpm: null, swathFt: 25,
+  { id: 'other', make: '', model: 'Other drone', tankL: null, flowLpm: null, swathFt: 25, speedMph: 15, generic: true,
     spec: 'Enter the tank size, flow and swath from your drone.' },
+  // Ground (tractor-type) sprayers. Booms, tanks and pumps vary too much between rigs to list makes and
+  // models as facts, so these are types with typical starting values that the applicator overwrites.
+  { id: 'ground-sp', make: 'Ground', model: 'Self-propelled sprayer', ground: true, generic: true, swathFt: 90, tankGal: 1000, flowLpm: null, speedMph: 12,
+    spec: 'Typical starting values: 90 ft boom, 1,000 gal tank, 12 mph. Put in your own sprayer\'s numbers.' },
+  { id: 'ground-pull', make: 'Ground', model: 'Pull-type sprayer', ground: true, generic: true, swathFt: 60, tankGal: 750, flowLpm: null, speedMph: 8,
+    spec: 'Typical starting values: 60 ft boom, 750 gal tank, 8 mph. Put in your own sprayer\'s numbers.' },
+  { id: 'ground-3pt', make: 'Ground', model: '3-point mounted sprayer', ground: true, generic: true, swathFt: 40, tankGal: 200, flowLpm: null, speedMph: 6,
+    spec: 'Typical starting values: 40 ft boom, 200 gal tank, 6 mph. Put in your own sprayer\'s numbers.' },
+  { id: 'ground', make: 'Ground', model: 'Other ground sprayer', ground: true, generic: true, swathFt: '', tankGal: null, flowLpm: null, speedMph: null,
+    spec: 'Enter your boom width, tank size, pump flow and working speed.' },
 ];
 
 export const droneById = id => DRONES.find(d => d.id === id) || null;

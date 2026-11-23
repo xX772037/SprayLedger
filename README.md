@@ -1,6 +1,6 @@
 # SprayLedger
 
-Application records for spray drone operators, built straight from the drone's flight log.
+Application records for spray drone and ground sprayer operators, built from the flight log, the sprayer monitor's log or a live GPS track.
 
 Import a flight log and a field boundary, and SprayLedger works out:
 
@@ -24,7 +24,8 @@ On top of that:
 
 ## Picking equipment and products
 
-- **Plan step: drone or sprayer.** Pick from DJI Agras T100, T70P, T50, T25, XAG P100 Pro, Hylio AG-272 and AG-230, or choose Ground sprayer or Other. The tank size, pump flow and a starting swath fill in, and any of them can be changed. The plan then shows the spray to mix, tank loads and a rough time for the field, and warns when the pump can't keep up with the rate.
+- **Plan step: drone or sprayer.** Pick from DJI Agras T100, T70P, T50, T25, XAG P100 Pro, Hylio AG-272 and AG-230, Other drone, or a tractor or ground sprayer (self-propelled, pull-type, 3-point mounted, or other). Every box can be filled in or changed: name for the rig, make and model, serial or FAA registration, working speed, swath or boom width, tank, pump flow and gallons per acre. The plan then shows the spray to mix, tank loads and a rough time for the field, and warns when the pump can't keep up with the rate.
+- **My equipment.** Tap **Save as my equipment** to keep a rig's details. Saved rigs appear at the top of the list under *My equipment*, drones first and then ground sprayers, so picking one fills every box. Change a box and tap **Save changes** to update it, or **Save as a new one** to keep both. Saved equipment stays in this browser, like saved jobs.
 - **Products step: pick list.** Common herbicides, fungicides, insecticides and adjuvants, plus every product used on your saved jobs. Picking one fills in the trade name, active ingredient, company, EPA Reg. No., restricted-use flag and, where confirmed, the a.i. per unit and REI. Rate and pre-harvest days are never filled from the list because they depend on crop and pest; products from your own jobs bring back your rates.
 
 Specs and label facts live in `src/catalog.js`, each checked against the maker's spec page or the EPA-stamped label in November 2026. Anything that couldn't be confirmed is left blank for the applicator to copy from the label. Edit that file to add the drones and products you use.
@@ -114,7 +115,8 @@ src/map.js        satellite map (Leaflet) and overlays
 src/weather.js    forecast, Delta T, inversion risk, go/no-go rating, drift and downwind edges
 src/live.js       live tracking: device GPS, USB NMEA receivers, simulation
 src/parcels.js    county parcel layers (District III), owner lookup, downwind neighbours
-src/catalog.js    drone specs, product label facts, job planning math
+src/catalog.js    drone and ground sprayer starting values, product label facts, job planning math
+src/equipment.js  saved equipment profiles (My equipment)
 src/config.js     map imagery, weather service and spray limits
 src/docs.js       customer report and SD application record (PDF)
 vendor/leaflet/   Leaflet 1.9.4 (BSD-2-Clause)

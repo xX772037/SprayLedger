@@ -2,6 +2,7 @@
 // South Dakota application record (ARSD 12:56:07:01) for the applicator's files.
 // Uses jsPDF (vendored, window.jspdf).
 
+import { isGround } from './equipment.js';
 import {
   productTotals, reentryTime, harvestDate, acresTreated, volumeGal, complianceCheck, missingRei,
   fmt, fmtDate, fmtDateTime, clock,
@@ -172,7 +173,7 @@ export function customerReport(r, ctx = {}) {
     ['Date', appDate(r)], ['Time', timeRange(r)],
     ['Crop', r.job.crop], ['Pest', r.job.pest],
     ['Acres sprayed', Number.isFinite(ac) ? `${fmt(ac, 2)} acres` : ''], ['Spray volume', Number.isFinite(gal) ? `${fmt(gal, 1)} gallons (${fmt(gal / ac, 2)} gal per acre)` : ''],
-    ['Field covered', s.coveragePct != null ? `${fmt(s.coveragePct, 1)}% of the field` : ''], ['Equipment', join(r.equipment.drone, r.equipment.swathFt && `${r.equipment.swathFt} ft swath`)],
+    ['Field covered', s.coveragePct != null ? `${fmt(s.coveragePct, 1)}% of the field` : ''], ['Equipment', join(r.equipment.drone, r.equipment.swathFt && `${r.equipment.swathFt} ft ${isGround(r.equipment) ? 'boom' : 'swath'}`)],
   ]);
   if (s.hasBoundary && s.skipAcres >= 0.05) {
     w.text(`The GPS record shows ${fmt(s.skipAcres, 2)} acres not sprayed${ctx.gaps?.length ? `, the largest ${ctx.gaps.length} spots numbered on the map` : ''}. Ask us about any that need a touch-up.`, { size: 11.5 });
@@ -250,7 +251,7 @@ export function stateRecord(r, ctx = {}) {
   w.heading('Supporting information', 13);
   const re = reentryTime(r), hv = harvestDate(r);
   w.fields([
-    ['Equipment', join(r.equipment.drone, r.equipment.serial)], ['Swath', r.equipment.swathFt ? `${r.equipment.swathFt} ft` : ''],
+    ['Equipment', join(r.equipment.drone, r.equipment.serial)], [isGround(r.equipment) ? 'Boom width' : 'Swath', r.equipment.swathFt ? `${r.equipment.swathFt} ft` : ''],
     ['Re-entry allowed', re ? fmtDateTime(re) : ''], ['Earliest harvest', hv ? fmtDate(hv) : ''],
     ['GPS coverage of field', s.coveragePct != null ? `${fmt(s.coveragePct, 1)}%, ${fmt(s.skipAcres, 2)} ac missed, ${fmt(s.offTargetAcres, 2)} ac off target` : ''],
     ['Source of GPS record', (r.sourceFiles || []).join('; ')],

@@ -7,7 +7,8 @@ import {
 } from './records.js';
 import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
 import { DRONES, PRODUCTS, PRODUCT_GROUPS, droneById, droneName, planJob, applyCatalogProduct, productsFromJobs, litersToGal, lpmToGpm } from './catalog.js';
-import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent } from './store.js';
+import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment } from './store.js';
+import { applyProfile, applyCatalogEquipment, profileFromEquipment, isGround, sortProfiles } from './equipment.js';
 import { sampleJob } from './sample.js';
 import { FieldMap } from './map.js';
 import { fetchForecast, fetchConditionsAt, assessHour, sprayWindows, downwindEdges, compass16 } from './weather.js';
@@ -38,6 +39,7 @@ const state = {
   wxError: null,
   parcelsView: { abort: null, list: [] },
   owners: { key: null },
+  equipmentList: [],
 };
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
@@ -697,7 +699,7 @@ function renderNotices() {
 
 function fillForm() {
   document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
-  $('f_model').value = state.rec.equipment.model || '';
+  renderModelOptions();
   $('tzRow').hidden = !state.rec.logNaive;
   $('logTz').value = state.rec.logTimes || 'local';
   if (!state.live) $('liveBoom').value = state.rec.equipment.swathFt || 90;
@@ -770,14 +772,21 @@ function fieldAcres() {
 }
 
 function renderPlan() {
-  const e = state.rec.equipment, d = droneById(e.model);
-  $('droneSpec').textContent = d ? `${droneName(d)}: ${d.spec}` : 'Pick yours to fill in the tank, pump and swath. You can change any number.';
+  const e = state.rec.equipment, prof = currentProfile(), d = droneById(e.model) || droneById(e.base);
+  const ground = isGround(e);
+  $('droneSpec').textContent = prof ? `Your saved equipment: ${prof.name}.`
+    : d ? `${d.generic ? d.model : droneName(d)}: ${d.spec}`
+    : 'Pick a drone or a tractor sprayer, or one you saved. Every box below can be changed.';
+  $('lblSwath').textContent = ground ? 'Boom width, feet' : 'Swath, feet';
+  $('eqSave').textContent = prof ? `Save changes to "${prof.name}"` : 'Save as my equipment';
+  $('eqSaveNew').hidden = !prof;
+  $('eqDelete').hidden = !prof;
   const gpa = Number(e.targetGpa);
   $('gpaNote').innerHTML = gpa > 0 ? `Spray volume: <b>${fmt(gpa, 1)} gallons per acre</b>. Change it in step 2, Plan.` : 'Set the gallons per acre in step 2, Plan.';
   const acres = fieldAcres();
   const out = $('planOut');
   if (!(acres > 0)) { out.innerHTML = '<p class="sub">Choose the field in step 1 to see how much spray, how many tank loads and how long the job takes.</p>'; return; }
-  const p = planJob({ acres, gpa, swathFt: Number(e.swathFt), tankGal: Number(e.tankGal), flowGpm: Number(e.flowGpm), maxMph: d?.maxMph || 15 });
+  const p = planJob({ acres, gpa, swathFt: Number(e.swathFt), tankGal: Number(e.tankGal), flowGpm: Number(e.flowGpm), maxMph: Number(e.speedMph) || d?.speedMph || 15 });
   if (!p) { out.innerHTML = '<p class="sub">Enter the gallons per acre to see the plan.</p>'; return; }
   const hrs = h => (h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min`);
   out.innerHTML = [
@@ -786,7 +795,7 @@ function renderPlan() {
     stat('Tank loads', p.loads ?? '—', '', p.loads ? `${fmt(Number(e.tankGal), 1)} gal tank` : 'Enter the tank size'),
     stat('About', hrs(p.totalHours), '', p.acPerHour ? `${fmt(p.acPerHour, 0)} acres an hour, refills included` : ''),
   ].join('') + (p.flowLimited ? `<p class="warn">At ${fmt(gpa, 1)} gal per acre the pump limits you to about ${fmt(p.mph, 1)} mph. Use a narrower swath or more or bigger nozzles to go faster.</p>` : '')
-    + (!(Number(e.flowGpm) > 0) && !d?.ground ? '<p class="warn">Enter the pump flow to check the drone can keep up with this rate.</p>' : '')
+    + (!(Number(e.flowGpm) > 0) ? `<p class="warn">Enter the pump flow to check the ${ground ? 'sprayer' : 'drone'} can keep up with this rate.</p>` : '')
     + '<p class="sub">A rough plan: real times depend on turns, battery swaps and how fast you refill.</p>';
 }
 
@@ -879,6 +888,8 @@ function loadRecord(rec) {
 
 function newRecord(seed) {
   cancelLive();
+  // The practice job's made-up applicator and drone are never carried into a real job.
+  if (state.practice) seed = null;
   state.practice = false;
   state.owners.key = null;
   state.fitPending = true;
@@ -1137,6 +1148,7 @@ function onFieldInput(e) {
     // the same value can show in more than one step: keep the copies in step
     document.querySelectorAll(`[data-path="${t.dataset.path}"]`).forEach(el => { if (el !== t) el.value = t.value; });
     if (t.dataset.path === 'equipment.swathFt') scheduleReanalyze();
+    if (t.dataset.path.startsWith('equipment.') && t.dataset.path !== 'equipment.targetGpa' && currentProfile()) eqMessage(`Changed for this job. Tap Save changes to keep it in "${currentProfile().name}" for next time.`);
   }
   else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.type === 'checkbox' ? t.checked : t.value;
   else return;
@@ -1190,27 +1202,82 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 
-// Drone and sprayer pick list
-(() => {
-  const groups = {};
-  for (const d of DRONES) (groups[d.make || 'Other'] ??= []).push(d);
-  $('f_model').innerHTML = '<option value="">Choose…</option>' + Object.entries(groups)
-    .map(([make, ds]) => `<optgroup label="${esc(make)}">${ds.map(d => `<option value="${d.id}">${esc(droneName(d))}</option>`).join('')}</optgroup>`).join('');
-})();
+// ---------------------------------------------------------------- equipment ("My equipment")
+
+const currentProfile = () => {
+  const m = String(state.rec.equipment.model || '');
+  return m.startsWith('p:') ? state.equipmentList.find(p => p.id === m.slice(2)) || null : null;
+};
+
+function renderModelOptions() {
+  const opt = (v, t) => `<option value="${esc(v)}">${esc(t)}</option>`;
+  const mine = sortProfiles(state.equipmentList);
+  const drones = DRONES.filter(d => !d.ground);
+  const makes = [...new Set(drones.filter(d => d.make).map(d => d.make))];
+  $('f_model').innerHTML = opt('', 'Choose…')
+    + (mine.length ? `<optgroup label="My equipment">${mine.map(p => opt(`p:${p.id}`, `${p.name}${p.drone && p.drone !== p.name ? ` (${p.drone})` : ''}`)).join('')}</optgroup>` : '')
+    + makes.map(m => `<optgroup label="${esc(m)} drones">${drones.filter(d => d.make === m).map(d => opt(d.id, droneName(d))).join('')}</optgroup>`).join('')
+    + `<optgroup label="Tractor and ground sprayers">${DRONES.filter(d => d.ground).map(d => opt(d.id, d.model)).join('')}</optgroup>`
+    + `<optgroup label="Other">${drones.filter(d => !d.make).map(d => opt(d.id, d.model)).join('')}</optgroup>`;
+  $('f_model').value = state.rec.equipment.model || '';
+  if ($('f_model').value !== (state.rec.equipment.model || '')) $('f_model').value = ''; // a deleted profile
+}
+
+async function loadEquipmentList() {
+  try { state.equipmentList = await listEquipment(); } catch { state.equipmentList = []; }
+  renderModelOptions();
+  renderPlan();
+}
+
+function eqMessage(text) { const el = $('eqState'); el.hidden = !text; el.textContent = text || ''; }
+
 $('f_model').addEventListener('change', e => {
-  const d = droneById(e.target.value), eq = state.rec.equipment;
-  eq.model = e.target.value;
-  if (d) {
-    // keep a name the applicator typed; replace one that came from this list
-    const fromList = !eq.drone || DRONES.some(x => droneName(x) === eq.drone || eq.drone.startsWith(droneName(x)));
-    if (!d.ground && d.id !== 'other') eq.drone = droneName(d);
-    else if (fromList) eq.drone = d.ground ? 'Ground sprayer' : '';
-    eq.swathFt = d.swathFt;
-    eq.tankGal = d.tankL != null ? +litersToGal(d.tankL).toFixed(1) : '';
-    eq.flowGpm = d.flowLpm != null ? +lpmToGpm(d.flowLpm).toFixed(2) : '';
+  const v = e.target.value, eq = state.rec.equipment;
+  if (v.startsWith('p:')) {
+    const p = state.equipmentList.find(x => x.id === v.slice(2));
+    if (p) state.rec.equipment = applyProfile(eq, p);
+    eqMessage(p ? `Filled in from your saved "${p.name}". Change anything for this job; tap Save changes to keep it for next time.` : '');
+  } else {
+    const d = droneById(v);
+    if (d) state.rec.equipment = applyCatalogEquipment(eq, d, DRONES);
+    else state.rec.equipment = { ...eq, model: '' };
+    eqMessage(d?.generic ? 'Put in your own details, then tap Save as my equipment so you only enter them once.' : '');
   }
   markDirty(); fillForm(); scheduleReanalyze();
 });
+
+async function saveProfile(asNew) {
+  const eq = state.rec.equipment, cur = asNew ? null : currentProfile();
+  if (!String(eq.name || '').trim()) {
+    eq.name = String(eq.drone || '').trim() || (isGround(eq) ? 'My ground sprayer' : 'My drone');
+    $('f_eqName').value = eq.name;
+  }
+  const profile = profileFromEquipment(eq, { id: cur?.id });
+  try {
+    await saveEquipment(profile);
+  } catch {
+    eqMessage('Could not save: this browser is not keeping data.');
+    return;
+  }
+  state.rec.equipment = { ...eq, model: `p:${profile.id}`, kind: profile.kind };
+  markDirty();
+  await loadEquipmentList();
+  fillForm();
+  eqMessage(cur ? `Saved the changes to "${profile.name}".` : `Saved "${profile.name}" to My equipment. Next time, pick it from the list at the top.`);
+}
+$('eqSave').addEventListener('click', () => saveProfile(false));
+$('eqSaveNew').addEventListener('click', () => saveProfile(true));
+$('eqDelete').addEventListener('click', e => confirmClick(e.currentTarget, 'Tap again to delete', async () => {
+  const p = currentProfile(); if (!p) return;
+  await deleteEquipment(p.id);
+  // The job keeps the numbers already filled in; only the saved profile goes.
+  state.rec.equipment = { ...state.rec.equipment, model: state.rec.equipment.base || '' };
+  markDirty();
+  await loadEquipmentList();
+  fillForm();
+  eqMessage(`Deleted "${p.name}" from My equipment. This job keeps its numbers.`);
+}));
+
 $('btnDelete').addEventListener('click', e => confirmClick(e.currentTarget, 'Confirm delete', async () => {
   await deleteRecord(state.rec.id);
   newRecord(state.rec);
@@ -1328,6 +1395,7 @@ if ('serviceWorker' in navigator && !embedded && (location.protocol === 'https:'
     ? 'Jobs are kept in this browser on this device. Export them now and then so you have a copy.'
     : 'This browser is not keeping data, so jobs last only until you close it. Export to keep them.';
   await refreshList();
+  await loadEquipmentList();
   if (state.records.length) {
     loadRecord(state.records[0]);
     showView('jobs');

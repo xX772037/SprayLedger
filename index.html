@@ -95,12 +95,24 @@
           <select id="f_model"></select>
         </label>
         <p class="sub" id="droneSpec"></p>
+        <div class="grid2">
+          <label>Name for this rig <input id="f_eqName" data-path="equipment.name" placeholder="e.g. Big Deere, T50 number 2"></label>
+          <label>Make and model <input id="f_eqMake" data-path="equipment.drone" placeholder="e.g. John Deere R4045"></label>
+          <label>Serial or FAA reg. <input id="f_eqSerial" data-path="equipment.serial"></label>
+          <label>Working speed, mph <input id="f_speed" data-path="equipment.speedMph" type="number" min="1" max="30" step="0.5" inputmode="decimal"></label>
+        </div>
         <div class="grid4 plan-inputs">
-          <label>Swath, feet <input id="f_swathPlan" data-path="equipment.swathFt" type="number" min="3" max="150" step="0.5" inputmode="decimal"></label>
+          <label><span id="lblSwath">Swath, feet</span> <input id="f_swathPlan" data-path="equipment.swathFt" type="number" min="3" max="150" step="0.5" inputmode="decimal"></label>
           <label>Tank, gallons <input id="f_tank" data-path="equipment.tankGal" type="number" min="0" step="0.1" inputmode="decimal"></label>
           <label>Pump, gal per minute <input id="f_flow" data-path="equipment.flowGpm" type="number" min="0" step="0.1" inputmode="decimal"></label>
           <label>Gallons per acre <input id="f_gpa" data-path="equipment.targetGpa" type="number" step="0.1" min="0" inputmode="decimal"></label>
         </div>
+        <div class="row-actions">
+          <button type="button" class="btn btn-primary btn-big" id="eqSave">Save as my equipment</button>
+          <button type="button" class="btn btn-big" id="eqSaveNew" hidden>Save as a new one</button>
+          <button type="button" class="btn btn-big btn-danger" id="eqDelete" hidden>Delete from my equipment</button>
+        </div>
+        <p class="note" id="eqState" aria-live="polite" hidden></p>
         <div class="plan-out" id="planOut" aria-live="polite"></div>
       </section>
       <section class="wx" id="wx" aria-label="Spray conditions">
@@ -120,13 +132,13 @@
     <!-- STEP 3: SPRAY -->
     <section class="step" data-panel="spray" role="tabpanel" aria-label="Spray" hidden>
       <div class="choice" role="tablist" aria-label="How to record coverage">
-        <button type="button" role="tab" id="tabLog" aria-selected="true" aria-controls="paneLog">Load the drone's flight log</button>
+        <button type="button" role="tab" id="tabLog" aria-selected="true" aria-controls="paneLog">Load a log file</button>
         <button type="button" role="tab" id="tabLive" aria-selected="false" aria-controls="paneLive">Track it live</button>
       </div>
 
       <div id="paneLog" role="tabpanel" aria-labelledby="tabLog" class="pane" >
         <div class="drop" id="dropzone">
-          <p>Pick the flight log file the drone app saved (CSV, KML or GeoJSON). You can also drag files onto this page.</p>
+          <p>Pick the log file the drone app or sprayer monitor saved (CSV, KML or GeoJSON). You can also drag files onto this page.</p>
           <div class="row-actions">
             <label class="btn btn-primary btn-big file-btn">
               <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">

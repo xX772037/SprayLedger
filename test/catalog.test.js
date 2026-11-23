@@ -4,7 +4,7 @@ import { DRONES, PRODUCTS, droneById, planJob, applyCatalogProduct, productsFrom
 
 test('catalog entries are complete and EPA numbers are well formed', () => {
   assert.equal(new Set(DRONES.map(d => d.id)).size, DRONES.length);
-  for (const d of DRONES) assert.ok(d.model && d.swathFt > 0 && d.spec, d.id);
+  for (const d of DRONES) assert.ok(d.model && d.spec && (d.swathFt > 0 || (d.generic && d.swathFt === '')), d.id);
   for (const p of PRODUCTS) {
     assert.ok(p.name && p.common && p.group, p.name);
     if (p.epa) assert.match(p.epa, /^\d{1,6}-\d{1,5}$/, p.name);
