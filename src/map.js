@@ -10,16 +10,22 @@ export class FieldMap {
     const Lf = L();
     this.map = Lf.map(el, { zoomSnap: 0.25, zoomControl: true, attributionControl: true, maxZoom: 21 }).setView([39.5, -96], 4);
     this.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+    // Each base map is a group: its pictures, plus any overlays (Hybrid's roads and place names) on top.
     this.tiles = {};
+    const pictureLayers = [];
     for (const [k, b] of Object.entries(BASEMAPS)) {
-      this.tiles[k] = Lf.tileLayer(b.url, { attribution: b.attribution, maxNativeZoom: b.maxNativeZoom, maxZoom: 21, crossOrigin: true });
+      const opts = { maxNativeZoom: b.maxNativeZoom, maxZoom: 21, crossOrigin: true };
+      const layers = [Lf.tileLayer(b.url, { ...opts, attribution: b.attribution, zIndex: 1 }),
+        ...(b.overlays || []).map(u => Lf.tileLayer(u, { ...opts, zIndex: 2 }))];
+      pictureLayers.push(...layers);
+      this.tiles[k] = Lf.layerGroup(layers);
     }
-    this.basemap = 'satellite';
-    this.tiles.satellite.addTo(this.map);
+    this.basemap = Object.keys(BASEMAPS)[0];
+    this.tiles[this.basemap].addTo(this.map);
 
     // Tell the page when imagery can't load (offline, or an embedded preview that blocks outside images).
     let loaded = 0, failed = 0;
-    for (const t of Object.values(this.tiles)) {
+    for (const t of pictureLayers) {
       t.on('tileload', () => { loaded++; onTileStatus?.('ok'); });
       t.on('tileerror', () => { failed++; if (!loaded && failed >= 4) onTileStatus?.('blocked'); });
     }
@@ -84,12 +90,12 @@ export class FieldMap {
   }
 
   /** Ask for the map pictures again (after the network comes back). */
-  redrawTiles() { this.tiles[this.basemap]?.redraw(); }
+  redrawTiles() { this.tiles[this.basemap]?.eachLayer(l => l.redraw()); }
 
   setBasemap(name) {
     if (name === this.basemap) return;
     this.map.removeLayer(this.tiles[this.basemap]);
-    this.tiles[name].addTo(this.map).bringToBack();
+    this.tiles[name].addTo(this.map); // tile layers sit in the tile pane, under the coverage and lines
     this.basemap = name;
     this.bmCtl?.querySelectorAll('[data-bm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.bm === name));
   }

@@ -3,10 +3,23 @@
 // a paid product should use a keyed plan (Esri, MapTiler, Mapbox...). Open-Meteo is free for
 // non-commercial use and has an inexpensive commercial API plan.
 
+const ESRI_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+// The first entry is the default. `overlays` are drawn on top of the base pictures (roads and place names).
 export const BASEMAPS = {
+  hybrid: {
+    label: 'Hybrid',
+    url: ESRI_IMAGERY,
+    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics; roads and places &copy; Esri, HERE, Garmin',
+    maxNativeZoom: 19,
+    overlays: [
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    ],
+  },
   satellite: {
     label: 'Satellite',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    url: ESRI_IMAGERY,
     attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
     maxNativeZoom: 19,
   },

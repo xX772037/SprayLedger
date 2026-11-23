@@ -11,7 +11,8 @@ Import a flight log and a field boundary, and SprayLedger works out:
 
 On top of that:
 
-- **Satellite map.** Coverage is drawn over satellite imagery (or street map): green sprayed, red not sprayed, amber sprayed twice, purple off target, with numbered pins on the patches to re-spray.
+- **Map.** The map opens on **Hybrid**: Esri satellite pictures with roads and place names on top, like a hybrid map view. **Satellite** (pictures only) and **Streets** (OpenStreetMap) are one tap away. Coverage is drawn over it: green sprayed, red not sprayed, amber sprayed twice, purple off target, with numbered pins on the patches to re-spray.
+  Google's own hybrid pictures are possible later through Google's paid Map Tiles API (API key, billing account, possibly Google's approval for satellite tiles). Copying pictures from Google Earth or Google Maps directly is against Google's terms.
 - **Spray conditions.** Wind, gusts, temperature, humidity, Delta T, inversion risk and rain chance at the field, from the Open-Meteo forecast. Each of the next 24 hours is rated go, caution or no-go, and the panel lists the spray windows. Drift direction is shown, and the field edges facing downwind are highlighted on the map. **Fill from weather records** puts the modelled wind, temperature and humidity at the application's start time into the record.
 - **Live tracking.** Paints coverage while you spray: the field starts red and turns green under the boom, with speed, GPS accuracy, acres done, acres left and time left. Position comes from:
   - **This device's GPS:** a phone or tablet riding in the cab of a ground rig. Good to roughly 10–15 ft. Tap the big boom button when the sprayer turns on or off (or press the space bar).
