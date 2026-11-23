@@ -427,6 +427,10 @@
 
     <section class="step" data-panel="invoice" role="tabpanel" aria-label="Invoice" hidden>
       <section class="inv-card" aria-labelledby="invTitle">
+        <label class="inv-rate" for="f_invNo">Invoice number
+          <input id="f_invNo" data-path="invoice.number" autocomplete="off">
+        </label>
+        <p class="sub warn-text" id="invNoWarn" hidden></p>
         <h3 id="invTitle">Bill to</h3>
         <dl class="inv-head" id="invHead"></dl>
         <label class="inv-rate" for="f_invRate">Your rate per acre
@@ -436,6 +440,26 @@
         <p class="sub">Type what you charge the customer for each product. Leave it at $0 if they supplied it.</p>
         <div id="invProducts" class="inv-products"></div>
         <dl class="inv-sum" id="invSum" aria-live="polite"></dl>
+      </section>
+
+      <section class="inv-card" aria-labelledby="invFromTitle">
+        <h3 id="invFromTitle">From you</h3>
+        <p class="sub">Typed once: these carry over to every new job, along with your business name, phone and address from step 5.</p>
+        <label for="f_payment">How customers pay you
+          <textarea id="f_payment" data-path="applicator.payment" rows="3" placeholder="e.g. Due within 30 days. Checks payable to Your Company, or Zelle to (605) 555-0100."></textarea>
+        </label>
+        <div class="logo-row">
+          <div class="logo-preview" id="logoPreview" aria-live="polite"><span class="sub">No logo yet</span></div>
+          <div class="logo-actions">
+            <label class="btn btn-big file-btn">
+              <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/gif">
+              <span id="logoPickLabel">Add your logo</span>
+            </label>
+            <button type="button" class="btn btn-big" id="logoRemove" hidden>Remove logo</button>
+          </div>
+        </div>
+        <p class="sub">Your logo goes on the invoice and the customer report. It's kept in this browser on this device.</p>
+        <p class="sub warn-text" id="logoState" hidden></p>
       </section>
       <section class="docs" aria-label="Invoice PDF">
         <article class="doc-card">

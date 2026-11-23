@@ -16,7 +16,7 @@ test('a flight log whose flow column is named spray_rate gives coverage and gall
   await page.locator('.steps').getByRole('tab', { name: /Spray/ }).click();
 
   const chooser = page.waitForEvent('filechooser');
-  await page.locator('label.file-btn').click();
+  await page.locator('#paneLog label.file-btn').click();
   await (await chooser).setFiles(LOG);
   await expect(page.locator('#files')).toContainText('spray-rate-log.csv');
 

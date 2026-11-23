@@ -174,12 +174,12 @@ test('invoice: older saved jobs without an invoice open with $0, and the spreads
   const { normalizeRecord, recordsToCSV } = await import('../src/records.js');
   const r = await invoiceJob(); delete r.invoice;
   const n = normalizeRecord(structuredClone(r));
-  assert.deepEqual(n.invoice, { ratePerAcre: '', total: 0 });
-  r.invoice = { ratePerAcre: '12', total: 741.54 };
+  assert.deepEqual(n.invoice, { number: '', ratePerAcre: '', total: 0 });
+  r.invoice = { number: '1001', ratePerAcre: '12', total: 741.54 };
   const lines = recordsToCSV([r]).trim().split('\r\n');
   const head = lines[0].split(','), row = lines[1].split(',');
-  assert.deepEqual(head.slice(-2), ['invoice_rate_per_acre', 'invoice_total']);
-  assert.deepEqual(row.slice(-2), ['12.00', '741.54']);
+  assert.deepEqual(head.slice(-3), ['invoice_rate_per_acre', 'invoice_total', 'invoice_number']);
+  assert.deepEqual(row.slice(-3), ['12.00', '741.54', '1001']);
 });
 
 test('invoice: the printed acres × rate always equals the printed application charge', async () => {
@@ -188,4 +188,27 @@ test('invoice: the printed acres × rate always equals the printed application c
   const inv = invoiceTotals(r);
   assert.equal(inv.acres, 39.42);
   assert.equal(inv.application, 473.04);
+});
+
+test('invoice numbers: 1001 first, then count up from the newest, keeping any prefix and zeros, never reusing one', async () => {
+  const { nextInvoiceNumber, invoiceNumberTaken } = await import('../src/records.js');
+  const job = (number, updatedAt) => ({ id: `j${number}`, updatedAt, invoice: { number } });
+  assert.equal(nextInvoiceNumber([]), '1001');
+  assert.equal(nextInvoiceNumber([job('', 1)]), '1001');
+  assert.equal(nextInvoiceNumber([job('1001', 1), job('1002', 2)]), '1003');
+  assert.equal(nextInvoiceNumber([job('2026-014', 5), job('1007', 1)]), '2026-015', 'follows the newest');
+  assert.equal(nextInvoiceNumber([job('INV-0099', 1)]), 'INV-0100');
+  assert.equal(nextInvoiceNumber([job('1005', 2), job('1006', 1)]), '1007', 'skips a number already used');
+  assert.equal(nextInvoiceNumber([job('Smith', 1)]), 'Smith-1', 'no digits: a suffix is added');
+  const a = { id: 'a', invoice: { number: '1001' } }, b = { id: 'b', invoice: { number: '1001' } };
+  assert.equal(invoiceNumberTaken([a, b], a), true);
+  assert.equal(invoiceNumberTaken([a], a), false, 'its own number is not a clash');
+  assert.equal(invoiceNumberTaken([a, b], { id: 'c', invoice: { number: '' } }), false);
+});
+
+test('payment instructions are part of the business details carried to new jobs', async () => {
+  const { emptyRecord, normalizeRecord } = await import('../src/records.js');
+  assert.equal(emptyRecord().applicator.payment, '');
+  const old = emptyRecord(); delete old.applicator.payment;
+  assert.equal(normalizeRecord(old).applicator.payment, '');
 });

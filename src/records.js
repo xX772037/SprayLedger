@@ -31,14 +31,15 @@ export function emptyRecord() {
       date: '', start: '', end: '', farm: '', customerAddress: '', field: '', legal: '',
       parcels: '', landowner: '', crop: '', pest: '', acresOverride: '',
     },
-    applicator: { name: '', cert: '', company: '', phone: '', address: '' },
+    // payment: how the customer pays (printed on invoices); carried to new jobs with the rest of the business details
+    applicator: { name: '', cert: '', company: '', phone: '', address: '', payment: '' },
     equipment: { model: '', kind: '', base: '', name: '', drone: '', serial: '', swathFt: 23, targetGpa: 2, tankGal: '', flowGpm: '', speedMph: '' },
     products: [blankProduct()],
     conditions: { wind: '', windDir: '', temp: '', humidity: '', source: '' },
     notes: '',
     volumeGalOverride: '',
     // ratePerAcre is typed in; total is kept up to date by the app (and recomputed for the spreadsheet).
-    invoice: { ratePerAcre: '', total: 0 },
+    invoice: { number: '', ratePerAcre: '', total: 0 },
     sourceFiles: [],
     log: null,       // { points: compact columns, boundary }
     summary: null,   // filled from the coverage analysis
@@ -205,6 +206,31 @@ export function invoiceTotals(rec) {
   return { acres, acresKnown, rate, application, lines, productCost, total: cents(application + productCost) };
 }
 
+/**
+ * The next invoice number: the newest saved invoice number with its last digits counted up (keeping any
+ * prefix and leading zeros, so "2026-014" is followed by "2026-015"), skipping numbers already used.
+ * 1001 when no job has an invoice number yet.
+ */
+export function nextInvoiceNumber(records) {
+  const used = new Set(records.map(r => String(r.invoice?.number || '').trim()).filter(Boolean));
+  const newest = [...records].filter(r => String(r.invoice?.number || '').trim()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  let n = newest ? String(newest.invoice.number).trim() : '1000';
+  const bump = s => {
+    const m = s.match(/^(.*?)(\d+)(\D*)$/);
+    if (!m) return `${s}-1`;
+    const next = String(Number(m[2]) + 1).padStart(m[2].length, '0');
+    return m[1] + next + m[3];
+  };
+  do n = bump(n); while (used.has(n));
+  return n;
+}
+
+/** Other saved jobs that already use this invoice number. */
+export function invoiceNumberTaken(records, rec) {
+  const n = String(rec.invoice?.number || '').trim();
+  return !!n && records.some(r => r.id !== rec.id && String(r.invoice?.number || '').trim() === n);
+}
+
 export const fmtMoney = v => '$' + (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CSV_COLUMNS = [
@@ -216,7 +242,7 @@ const CSV_COLUMNS = [
   'Spray volume (gal)', 'Spray volume (gal/ac)', 'REI (h)', 'Re-entry allowed', 'PHI (days)', 'Harvest not before',
   'Applicator', 'Applicator license (AP) no.', 'Company', 'Drone or sprayer', 'Serial / registration', 'Swath (ft)',
   'Wind (mph)', 'Wind from', 'Temp (°F)', 'Humidity (%)', 'Weather source', 'Notes',
-  'invoice_rate_per_acre', 'invoice_total',
+  'invoice_rate_per_acre', 'invoice_total', 'invoice_number',
 ];
 
 const esc = v => {
@@ -245,7 +271,7 @@ export function recordsToCSV(records) {
         fmtN(gal, 2), fmtN(gal / ac, 2), p.rei, re ? `${isoDate(re)} ${hhmm(re)}` : '', p.phi, hv ? isoDate(hv) : '',
         r.applicator.name, r.applicator.cert, r.applicator.company, r.equipment.drone, r.equipment.serial, r.equipment.swathFt,
         r.conditions.wind, r.conditions.windDir, r.conditions.temp, r.conditions.humidity, r.conditions.source, r.notes,
-        inv.rate.toFixed(2), inv.total.toFixed(2),
+        inv.rate.toFixed(2), inv.total.toFixed(2), r.invoice.number,
       ].map(esc).join(','));
     }
   }

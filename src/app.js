@@ -2,12 +2,12 @@ import { parseFile, LOG_PROFILES } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
 import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
-  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV, invoiceTotals, fmtMoney,
+  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV, invoiceTotals, fmtMoney, nextInvoiceNumber, invoiceNumberTaken,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
 import { customerReport, stateRecord, invoicePdf, deliverPdf, fileName } from './docs.js';
 import { DRONES, PRODUCTS, PRODUCT_GROUPS, droneById, droneName, planJob, applyCatalogProduct, productsFromJobs, litersToGal, lpmToGpm } from './catalog.js';
-import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment } from './store.js';
+import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment, getSetting, setSetting } from './store.js';
 import { applyProfile, applyCatalogEquipment, profileFromEquipment, isGround, sortProfiles } from './equipment.js';
 import { sampleJob } from './sample.js';
 import { FieldMap } from './map.js';
@@ -40,6 +40,7 @@ const state = {
   parcelsView: { abort: null, list: [] },
   owners: { key: null },
   equipmentList: [],
+  logo: null, // { dataUrl, width, height }: the business logo for the invoice and customer report
 };
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
@@ -946,6 +947,16 @@ function loadSample() {
 
 // ---------------------------------------------------------------- invoice
 
+/** Give the job the next invoice number the first time its invoice is opened (the applicator can change it). */
+function ensureInvoiceNumber() {
+  const r = state.rec;
+  r.invoice ??= { number: '', ratePerAcre: '', total: 0 };
+  if (String(r.invoice.number || '').trim()) return;
+  r.invoice.number = nextInvoiceNumber(state.records.filter(x => x.id !== r.id));
+  $('f_invNo').value = r.invoice.number;
+  if (!state.practice) markDirty();
+}
+
 /** The product rows with their cost boxes. Rebuilt when the products change, not on every keystroke. */
 function renderInvoice() {
   const r = state.rec;
@@ -964,6 +975,9 @@ function updateInvoiceSums() {
   r.invoice ??= { ratePerAcre: '', total: 0 };
   const inv = invoiceTotals(r);
   r.invoice.total = inv.total;
+  const taken = !state.practice && invoiceNumberTaken(state.records, r);
+  $('invNoWarn').hidden = !taken;
+  $('invNoWarn').textContent = taken ? `Invoice number ${r.invoice.number} is already used on another job.` : '';
   const dl = pairs => pairs.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || '—')}</dd></div>`).join('');
   $('invHead').innerHTML = dl([
     ['Customer', r.job.farm], ['Field', r.job.field],
@@ -1088,8 +1102,10 @@ async function makeDocument(kind, act, btn) {
       gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
     };
     const r = state.rec;
-    const doc = kind === 'customer' ? customerReport(r, ctx) : kind === 'invoice' ? invoicePdf(r) : stateRecord(r, ctx);
-    const name = fileName({ customer: 'customer-report', invoice: 'invoice' }[kind] || 'SD-application-record', r);
+    ctx.logo = state.logo;
+    const invNo = String(r.invoice?.number || '').trim().replace(/[^A-Za-z0-9]+/g, '-');
+    const doc = kind === 'customer' ? customerReport(r, ctx) : kind === 'invoice' ? invoicePdf(r, ctx) : stateRecord(r, ctx);
+    const name = fileName({ customer: 'customer-report', invoice: invNo ? `invoice-${invNo}` : 'invoice' }[kind] || 'SD-application-record', r);
     const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : kind === 'invoice' ? `Invoice: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
     const on = r.job.date ? ` on ${fmtDate(new Date(r.job.date + 'T00:00'))}` : '';
     const how = act === 'send' && shareFiles
@@ -1138,7 +1154,7 @@ function setStep(name) {
   state.step = name;
   document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
-  if (name === 'invoice') renderInvoice(); // product names may have changed on step 4
+  if (name === 'invoice') { ensureInvoiceNumber(); renderInvoice(); } // product names may have changed on step 4
   const slot = document.querySelector(`[data-map-slot="${name}"]`);
   const card = $('mapcard');
   if (slot) { slot.appendChild(card); card.hidden = false; requestAnimationFrame(() => { fmap?.invalidate(); if (state.fitPending) renderMap(); }); }
@@ -1261,6 +1277,58 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// ---------------------------------------------------------------- business logo
+function renderLogo() {
+  const l = state.logo;
+  $('logoPreview').innerHTML = l ? `<img src="${l.dataUrl}" alt="Your logo">` : '<span class="sub">No logo yet</span>';
+  $('logoPickLabel').textContent = l ? 'Change logo' : 'Add your logo';
+  $('logoRemove').hidden = !l;
+}
+
+/** Shrink a picture to at most 600 x 300 pixels so it stays small in the PDFs and in storage. */
+function readLogo(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // Trim fully transparent edges, so the logo lines up with the page margin.
+      const full = document.createElement('canvas');
+      full.width = img.naturalWidth; full.height = img.naturalHeight;
+      const fx = full.getContext('2d'); fx.drawImage(img, 0, 0);
+      const { data, width: W, height: H } = fx.getImageData(0, 0, full.width, full.height);
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 < 0) { reject(new Error('That picture is empty. Try another file.')); return; }
+      const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+      const scale = Math.min(1, 600 / cw, 300 / ch);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(cw * scale)); c.height = Math.max(1, Math.round(ch * scale));
+      c.getContext('2d').drawImage(full, x0, y0, cw, ch, 0, 0, c.width, c.height);
+      resolve({ dataUrl: c.toDataURL('image/png'), width: c.width, height: c.height });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a picture this browser can open. Try a PNG or JPG.')); };
+    img.src = url;
+  });
+}
+
+$('logoInput').addEventListener('change', async e => {
+  const f = e.target.files?.[0]; e.target.value = '';
+  if (!f) return;
+  const note = $('logoState'); note.hidden = true;
+  try {
+    const logo = await readLogo(f);
+    await setSetting('logo', logo);
+    state.logo = logo; renderLogo();
+  } catch (err) { note.hidden = false; note.textContent = err.message || 'The logo could not be saved.'; }
+});
+$('logoRemove').addEventListener('click', e => confirmClick(e.currentTarget, 'Tap again to remove', async () => {
+  await setSetting('logo', null);
+  state.logo = null; renderLogo();
+}));
 
 // ---------------------------------------------------------------- offline
 // The app's own files come from the service worker (sw.js), so it opens with no signal. Weather and
@@ -1487,6 +1555,8 @@ if ('serviceWorker' in navigator && !embedded && (location.protocol === 'https:'
     : 'This browser is not keeping data, so jobs last only until you close it. Export to keep them.';
   await refreshList();
   await loadEquipmentList();
+  try { state.logo = await getSetting('logo'); } catch { state.logo = null; }
+  renderLogo();
   if (state.records.length) {
     loadRecord(state.records[0]);
     showView('jobs');

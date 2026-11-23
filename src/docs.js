@@ -123,11 +123,27 @@ const timeRange = r => (r.job.start ? `${clock(r.job.start)} to ${clock(r.job.en
 const ymd = r => (r.job.date ? r.job.date.replaceAll('-', ' / ') : '');
 const appDate = r => (r.job.date ? fmtDate(new Date(`${r.job.date}T00:00`)) : '');
 
-function businessHeader(w, r) {
+/**
+ * Business name and contact at the top. `logo` = { dataUrl, width, height } (pixels) puts the logo at the top
+ * right, up to 170 x 60 pt, with the text kept clear of it.
+ */
+function businessHeader(w, r, logo) {
   const a = r.applicator;
-  if (a.company) w.text(a.company, { size: 18, style: 'bold', gap: 0 });
+  const top = w.y;
+  let textWidth = w.width, logoH = 0;
+  if (logo?.dataUrl && logo.width > 0 && logo.height > 0) {
+    const scale = Math.min(170 / logo.width, 60 / logo.height);
+    const lw = logo.width * scale; logoH = logo.height * scale;
+    const fmt = /^data:image\/jpe?g/i.test(logo.dataUrl) ? 'JPEG' : 'PNG';
+    try {
+      w.doc.addImage(logo.dataUrl, fmt, PAGE.w - PAGE.m - lw, top, lw, logoH, undefined, 'FAST');
+      textWidth = w.width - lw - 18;
+    } catch { logoH = 0; } // a damaged logo is left off rather than stopping the PDF
+  }
+  if (a.company) w.text(a.company, { size: 18, style: 'bold', gap: 0, width: textWidth });
   const contact = join(a.address, a.phone && `Phone ${a.phone}`);
-  if (contact) w.text(contact, { size: 11, color: MUTED });
+  if (contact) w.text(contact, { size: 11, color: MUTED, width: textWidth });
+  w.y = Math.max(w.y, top + logoH + 6);
 }
 
 function productRows(r) {
@@ -138,7 +154,7 @@ function productRows(r) {
 export function customerReport(r, ctx = {}) {
   const w = new Writer(`Spray application report: ${r.job.field || 'field'} ${r.job.date}`);
   const s = r.summary || {};
-  businessHeader(w, r);
+  businessHeader(w, r, ctx.logo);
   w.y += 6;
   w.text('Spray Application Report', { size: 24, style: 'bold', color: ACCENT, gap: 2 });
   w.text(join(r.job.field && `Field: ${r.job.field}`, appDate(r)), { size: 14, gap: 10 });
@@ -196,13 +212,15 @@ export function customerReport(r, ctx = {}) {
 }
 
 /** The invoice for the customer, in the same style as the customer report. */
-export function invoicePdf(r) {
-  const w = new Writer(`Invoice ${r.job.date || ''} ${r.job.field || ''}`);
+export function invoicePdf(r, ctx = {}) {
+  const number = String(r.invoice?.number || '').trim();
+  const w = new Writer(`Invoice ${number || ''} ${r.job.date || ''} ${r.job.field || ''}`.replace(/\s+/g, ' ').trim());
   const inv = invoiceTotals(r);
-  businessHeader(w, r);
+  businessHeader(w, r, ctx.logo);
   w.y += 6;
-  w.text('Invoice', { size: 24, style: 'bold', color: ACCENT, gap: 2 });
-  w.text(join(r.job.field && `Field: ${r.job.field}`, appDate(r)), { size: 14, gap: 10 });
+  w.text(number ? `Invoice No. ${number}` : 'Invoice', { size: 24, style: 'bold', color: ACCENT, gap: 2 });
+  w.text(join(r.job.field && `Field: ${r.job.field}`, appDate(r)), { size: 14, gap: 2 });
+  w.text(`Invoice date: ${fmtDate(ctx.today || new Date())}`, { size: 11, color: MUTED, gap: 10 });
 
   w.heading('Bill to');
   w.fields([['Customer', r.job.farm], ['Address', r.job.customerAddress], ['Field', r.job.field], ['Date sprayed', appDate(r)]]);
@@ -219,10 +237,14 @@ export function invoicePdf(r) {
   }
   w.table([{ label: 'Item', w: 0.34 }, { label: 'Amount', w: 0.28 }, { label: 'Rate', w: 0.2 }, { label: 'Charge', w: 0.18 }], rows, { size: 11.5 });
   w.box([['Application:', fmtMoney(inv.application)], ['Products:', fmtMoney(inv.productCost)], ['Total due:', fmtMoney(inv.total)]]);
+  if (String(r.applicator.payment || '').trim()) {
+    w.heading('How to pay');
+    w.text(r.applicator.payment, { size: 12 });
+  }
 
-  w.heading('From');
-  w.fields([['Company', r.applicator.company], ['Applicator', r.applicator.name], ['Phone', r.applicator.phone], ['Address', r.applicator.address]]);
-  w.y += 6;
+  // The business name, address and phone are in the header; the applicator's name goes with the thanks.
+  w.y += 10;
+  if (r.applicator.name) w.text(`Applicator: ${r.applicator.name}`, { size: 11, color: MUTED, gap: 2 });
   w.text('Thank you for your business. The spray application report for this job has the products, safety dates and coverage map.', { size: 11, color: MUTED });
   w.footer(`Invoice · ${r.job.field || ''} · ${r.job.date || ''}`);
   return w.doc;

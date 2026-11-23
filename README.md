@@ -42,9 +42,12 @@ Step 7, **Invoice**, comes after Documents and opens from any job, including fin
 - Type **your rate per acre** and, for each product, **what you charge for it**. Both start at $0; leave a product at $0 if the customer supplied it.
 - The total adds itself up: **acres × rate per acre + product charges**. Acres are billed to 2 decimals, as printed, so the customer can check the math. Blank or negative amounts count as $0.
 - **Download PDF** makes an invoice in the same style as the customer report (on phones, **Text or email it** opens the share menu).
-- The rate and total are saved with the job and added to the spreadsheet export as `invoice_rate_per_acre` and `invoice_total`.
+- **Invoice number:** each job gets the next number the first time its invoice is opened: 1001, 1002, and so on, or counting on from your own style (`2026-014` is followed by `2026-015`). Change it any time; the app warns if another job already uses it. The PDF file is named with the number.
+- **How customers pay you:** type it once on the Invoice step (for example "Due within 30 days. Checks payable to…"). It prints under *How to pay* and carries over to every new job with your business name and address.
+- **Your logo:** add a PNG or JPG once on the Invoice step. It prints at the top right of the invoice and the customer report (not the state record). It's shrunk and trimmed to fit, and kept in this browser on this device.
+- The rate, total and number are saved with the job and added to the spreadsheet export as `invoice_rate_per_acre`, `invoice_total` and `invoice_number`.
 
-There are no taxes, discounts or invoice numbers yet; add them on the PDF by hand if you need them.
+There are no taxes or discounts yet; add them on the PDF by hand if you need them.
 
 ## End-of-job documents (South Dakota)
 
