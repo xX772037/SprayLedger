@@ -225,7 +225,7 @@ export function stateRecord(r, ctx = {}) {
   w.fields([['Pest(s), name from label', r.job.pest], ['Acres treated', Number.isFinite(ac) ? `${fmt(ac, 2)} acres` : ''], ['Crop, commodity or site', r.job.crop]], 3);
 
   w.heading('(5) Date and time   ·   (6) Applicator', 13);
-  w.fields([['Year / month / day', ymd(r)], ['Start time', clock(r.job.start)], ['Finish time', clock(r.job.end)], ['Applicator name', r.applicator.name], ['Applicator license (AP) no.', r.applicator.cert], ['Business', r.applicator.company]], 3);
+  w.fields([['Year / month / day', ymd(r)], ['Start time', clock(r.job.start)], ['Finish time', clock(r.job.end)], ['Applicator name', r.applicator.name], ['Applicator license (AP) no.', r.applicator.cert], ['Business', r.applicator.company], ['Business address', r.applicator.address]], 3);
 
   w.heading('(7) Products   ·   (8) Company   ·   (10) Amount and concentration', 13);
   const rows = productRows(r);

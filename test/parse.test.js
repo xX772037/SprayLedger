@@ -78,3 +78,11 @@ test('a log with zero spraying points gets a warning', () => {
   assert.ok(r.points.every(p => !p.spray));
   assert.match(r.warnings.join(' '), /No spraying found/);
 });
+
+test('KML and GeoJSON tracks without times get no made-up times', () => {
+  const kml = parseKML('<kml><Placemark><LineString><coordinates>-97.9,43.3 -97.9,43.3001 -97.9,43.3002</coordinates></LineString></Placemark></kml>');
+  assert.ok(kml.timeless);
+  assert.ok(kml.points.every(p => p.t === null));
+  const gj = parseGeoJSON({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-97.9, 43.3], [-97.9, 43.3001]] } });
+  assert.ok(gj.points.every(p => p.t === null));
+});

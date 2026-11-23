@@ -51,7 +51,7 @@ test('REIs confirmed on the labels are in the product list', () => {
 // ---- Record rules
 test('adjuvants are not held to the pesticide label items', () => {
   const r = rec([{ name: 'Veltyma', common: 'x', company: 'BASF', ai: '1.67 lb', rei: '12' }, { name: 'Non-ionic surfactant (NIS)', common: 'non-ionic surfactant', kind: 'adjuvant' }]);
-  r.applicator = { ...r.applicator, name: 'N', cert: 'AP-1' }; r.conditions = { wind: '5', windDir: 'SW', temp: '70' };
+  r.applicator = { ...r.applicator, name: 'N', cert: 'AP-1', address: 'Menno SD' }; r.conditions = { wind: '5', windDir: 'SW', temp: '70' };
   r.summary = { acresTreated: 40, volumeGal: 80, lat: 43.3, lon: -97.9 };
   assert.ok(isAdjuvant(r.products[1]));
   assert.ok(isAdjuvant({ name: 'Crop oil concentrate', common: '', epa: '' }), 'recognised by name when typed');

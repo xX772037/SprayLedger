@@ -47,9 +47,9 @@ test('South Dakota record check follows ARSD 12:56:07:01 items 1–11', () => {
   const r = rec();
   let c = complianceCheck(r);
   const miss = c.missing.map(m => m.ref);
-  assert.deepEqual(miss, ['1', '3', '6', '7', '8', '9', '10', 'form']);
+  assert.deepEqual(miss, ['1', '3', '6', '7', '8', '9', '10', 'form', 'addr']);
   r.job.farm = 'Example Farms'; r.job.customerAddress = '1 Main St, Olivet SD'; r.job.pest = 'Aphids';
-  r.applicator = { ...r.applicator, name: 'A', cert: 'AP-1' };
+  r.applicator = { ...r.applicator, name: 'A', cert: 'AP-1', address: 'Menno SD' };
   r.conditions = { wind: '5', windDir: 'SW', temp: '70', humidity: '', source: 'On site' };
   r.products[0] = { ...r.products[0], common: 'pyraclostrobin', company: 'Example Co', ai: '2.09 lb/gal' };
   c = complianceCheck(r);
@@ -95,4 +95,23 @@ test('one product with unknown REI gives no re-entry time and an incomplete reco
   const c = complianceCheck(r);
   assert.equal(c.complete, false);
   assert.ok(c.missing.some(m => m.ref === 'REI'));
+});
+
+test('the record check: 11 rule items plus license, address and REI; adjuvants skip the pesticide items', async () => {
+  const { emptyRecord, complianceCheck } = await import('../src/records.js');
+  const r = emptyRecord();
+  r.job = { ...r.job, date: '2026-06-14', start: '06:42', end: '08:33', farm: 'F', customerAddress: 'A', pest: 'P', crop: 'C', legal: 'NE1/4 6-98-58', acresOverride: '40' };
+  r.applicator = { name: 'Pat', cert: 'AP-1', company: 'Co', phone: '', address: 'Menno SD' };
+  r.conditions = { wind: '6', windDir: 'SW', temp: '68' };
+  r.volumeGalOverride = '80';
+  r.equipment = { ...r.equipment, targetGpa: 2 };
+  r.products = [
+    { ...r.products[0], name: 'Veltyma', common: 'x', company: 'BASF', ai: '1.67 lb per gal', rate: '7', unit: 'fl oz', rei: '12' },
+    { ...r.products[0], name: 'Non-ionic surfactant (NIS)', common: 'non-ionic surfactant', kind: 'adjuvant', company: '', ai: '', rate: '0.25', unit: '% v/v', rei: '' },
+  ];
+  const c = complianceCheck(r);
+  assert.deepEqual(c.items.map(i => i.ref), ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', 'form', 'addr', 'REI']);
+  assert.equal(c.complete, true, c.missing.map(m => m.label).join(', '));
+  r.applicator.address = '';
+  assert.deepEqual(complianceCheck(r).missing.map(m => m.ref), ['addr']);
 });

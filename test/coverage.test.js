@@ -87,3 +87,19 @@ test('a CSV whose flow column is spray_rate (L/min) gives coverage and volume ab
   assert.ok(c.stats.coveragePct > 99, `coverage ${c.stats.coveragePct}`);
   assert.ok(c.stats.volumeL > 0, `volume ${c.stats.volumeL}`);
 });
+
+test('a track with no times: coverage from distance alone, no invented minutes, no false gaps', () => {
+  const pts = passes(10).map(p => ({ ...p, t: null, flowLpm: NaN }));
+  const c = computeCoverage({ points: pts, boundary: square(100), swathM: 10 });
+  assert.ok(c.stats.coveragePct > 99, `coverage ${c.stats.coveragePct}`);
+  assert.equal(c.stats.sprayMinutes, null);
+  assert.equal(c.stats.dropped.gaps + c.stats.dropped.jumps, 0);
+  assert.equal(c.start, null);
+});
+
+test('a sparse log reports dropped pauses and jumps instead of hiding them', () => {
+  const pts = passes(2);
+  const late = pts.slice(101).map(p => ({ ...p, t: p.t + 60_000 })); // a minute's pause before pass 2
+  const c = computeCoverage({ points: [...pts.slice(0, 101), ...late], boundary: square(100), swathM: 10 });
+  assert.equal(c.stats.dropped.gaps, 1);
+});

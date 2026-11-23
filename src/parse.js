@@ -146,7 +146,7 @@ export function assignFlights(points, gapMs = 60000) {
   if (points.some(p => p.flight !== null && p.flight !== '')) return points;
   let n = 1;
   points.forEach((p, i) => {
-    if (i > 0 && p.t - points[i - 1].t > gapMs) n++;
+    if (i > 0 && Number.isFinite(p.t) && Number.isFinite(points[i - 1].t) && p.t - points[i - 1].t > gapMs) n++;
     p.flight = String(n);
   });
   return points;
@@ -173,13 +173,13 @@ export function parseGeoJSON(obj) {
         const tm = tt != null ? parseTime(tt) : null;
         if (!tm) timeless = true;
         if (props.spraying == null) sprayUnknown = true;
-        points.push({ t: tm ? tm.ms : points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: props.spraying ?? true, flight: String(props.flight ?? li + 1) });
+        points.push({ t: tm ? tm.ms : null, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: props.spraying ?? true, flight: String(props.flight ?? li + 1) });
       }));
     } else if (g.type === 'Point') {
       const tm = props.time != null ? parseTime(props.time) : null;
       if (!tm) timeless = true;
       const flow = parseFloat(props.flow_l_min ?? props.flow ?? NaN);
-      points.push({ t: tm ? tm.ms : points.length * 1000, lat: g.coordinates[1], lon: g.coordinates[0], alt: g.coordinates[2] ?? NaN, speed: NaN, flowLpm: flow, spray: props.spraying ?? flow > 0, flight: props.flight != null ? String(props.flight) : null });
+      points.push({ t: tm ? tm.ms : null, lat: g.coordinates[1], lon: g.coordinates[0], alt: g.coordinates[2] ?? NaN, speed: NaN, flowLpm: flow, spray: props.spraying ?? flow > 0, flight: props.flight != null ? String(props.flight) : null });
     }
   }
   return { boundary, points: points.length ? assignFlights(points) : points, timeless, sprayUnknown };
@@ -205,13 +205,13 @@ export function parseKML(text) {
   for (const m of text.matchAll(/<(?:\w+:)?LineString\b[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\/(?:\w+:)?coordinates>/g)) {
     flight++;
     timeless = true; // a LineString has positions only
-    for (const c of kmlCoords(m[1])) points.push({ t: points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) });
+    for (const c of kmlCoords(m[1])) points.push({ t: null, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) });
   }
   for (const m of text.matchAll(/<gx:Track\b[\s\S]*?<\/gx:Track>/g)) {
     flight++;
     const whens = [...m[0].matchAll(/<when>([^<]+)<\/when>/g)].map(x => parseTime(x[1]));
     const coords = [...m[0].matchAll(/<gx:coord>([^<]+)<\/gx:coord>/g)].map(x => x[1].trim().split(/\s+/).map(Number));
-    coords.forEach((c, i) => points.push({ t: whens[i]?.ms ?? points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) }));
+    coords.forEach((c, i) => points.push({ t: whens[i]?.ms ?? null, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) }));
   }
   return { boundary, points, timeless, sprayUnknown: points.length > 0 };
 }

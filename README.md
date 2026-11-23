@@ -59,7 +59,7 @@ Fonts, the map library and the PDF maker are stored with the app, so nothing is 
 
 ## What still needs real-world work
 
-- **Log time zones.** Drone apps write times differently. When a log's times have no time zone, the Spray step asks whether they are local time or UTC; check a real log from each drone model.
+- **Log time zones.** Drone apps write times differently. When a log's times have no time zone they are read as UTC, which most drone apps write, and the Spray step lets the applicator switch to local time. Check a real log from each drone model. KML and GeoJSON tracks with no times are mapped by distance alone, and the start and finish times are typed in by hand.
 
 - **Drone live telemetry.** Drones are covered by importing their flight log after each flight. Live drone position needs each manufacturer's cloud or SDK integration (for example a DJI Cloud API partnership, or MAVLink for ArduPilot/PX4-based sprayers).
 - **Boom on/off from the sprayer.** In the cab the operator taps the boom button. Reading boom state automatically needs a connection to the rate controller or ISOBUS.

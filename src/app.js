@@ -115,7 +115,13 @@ async function importFiles(fileList) {
     if (!relative) state.points.sort((a, b) => a.t - b.t);
     state.rec.sourceFiles = names;
     state.rec.logNaive = naive && !relative; // times without a time zone: let the applicator say local or UTC
-    state.rec.logTimes = 'local';
+    state.rec.logTimes = 'local'; // how parse.js read them
+    // Drone apps usually write UTC, so times without a zone are taken as UTC; the Spray step lets the
+    // applicator switch to local time if their app writes that instead.
+    if (state.rec.logNaive) {
+      shiftLogTimes('utc');
+      state.notices.push({ text: 'The times in this log have no time zone, so they were read as UTC (world time), which most drone apps write. If the start time on step 5 looks wrong by a few hours, change "Times in this log are in" to local time.' });
+    }
   } else if (names.length) {
     state.rec.sourceFiles = [...new Set([...state.rec.sourceFiles, ...names])];
   }
@@ -649,7 +655,7 @@ function renderStats() {
   const dev = Number.isFinite(gpa) && tgt > 0 ? (gpa / tgt - 1) * 100 : NaN;
   const tiles = [
     stat('Field done', nb ? '—' : fmt(cov, 1), nb ? '' : '%', nb ? 'Choose the field to see this' : `of ${fmt(s.fieldAcres, 1)} acres`, nb ? '' : cov >= 98 ? 'ok' : cov >= 93 ? 'warn' : 'bad'),
-    stat('Acres sprayed', fmt(ac, 1), 'ac', `${s.flights} flight${s.flights !== 1 ? 's' : ''}, ${fmt(s.sprayMinutes, 0)} min`),
+    stat('Acres sprayed', fmt(ac, 1), 'ac', `${s.flights} flight${s.flights !== 1 ? 's' : ''}, ${s.sprayMinutes == null ? 'no times in the file' : `${fmt(s.sprayMinutes, 0)} min`}`),
     stat('Gallons', fmt(gal, 1), Number.isFinite(gal) ? 'gal' : '', state.rec.volumeGalOverride ? 'Typed in by hand' : s.volumeGal == null ? 'Not in the log: type it in at step 5, Details' : 'From the pump'),
     stat('Gallons per acre', fmt(gpa, 2), '', tgt > 0 ? `Aimed for ${fmt(tgt, 1)}${Number.isFinite(dev) ? ` (${dev >= 0 ? '+' : ''}${fmt(dev, 0)}%)` : ''}` : '', Number.isFinite(dev) ? (Math.abs(dev) > 10 ? 'warn' : 'ok') : ''),
   ];
@@ -682,8 +688,8 @@ function renderFlights() {
   const a = state.analysis;
   if (!a) { $('flights').innerHTML = '<tr><td colspan="4">—</td></tr>'; return; }
   $('flights').innerHTML = a.flights.map(f => {
-    const span = f.sprayStart != null ? `${hhmm(new Date(f.sprayStart))}–${hhmm(new Date(f.sprayEnd))}` : 'No spraying';
-    const mins = f.sprayStart != null ? (f.sprayEnd - f.sprayStart) / 60000 : 0;
+    const span = f.sprayStart != null ? `${hhmm(new Date(f.sprayStart))}–${hhmm(new Date(f.sprayEnd))}` : f.sprayed ? 'No times in file' : 'No spraying';
+    const mins = f.sprayStart != null ? (f.sprayEnd - f.sprayStart) / 60000 : f.sprayed ? NaN : 0;
     return `<tr><td class="mono">${esc(f.id)}</td><td class="mono">${span}</td><td class="num">${fmt(mins, 1)}</td><td class="num">${a.hasFlow ? fmt(f.volumeL / L_PER_GAL, 1) : '—'}</td></tr>`;
   }).join('');
 }
@@ -1180,13 +1186,18 @@ $('btnSave').addEventListener('click', async () => {
   }
 });
 
-// Times written without a time zone: local time (default) or UTC. Switching moves every point by the UTC offset.
-$('logTz').addEventListener('change', e => {
-  const want = e.target.value, have = state.rec.logTimes || 'local';
-  if (want === have || !state.points.length) return;
+// Times written without a time zone: UTC (the default for new imports) or local time. Switching moves
+// every point by the UTC offset. Jobs saved before UTC became the default keep 'local'.
+function shiftLogTimes(want) {
+  const have = state.rec.logTimes || 'local';
+  if (want === have || !state.points.length) return false;
   const sign = want === 'utc' ? -1 : 1;
   state.points = state.points.map(p => ({ ...p, t: p.t + sign * new Date(p.t).getTimezoneOffset() * 60000 }));
   state.rec.logTimes = want;
+  return true;
+}
+$('logTz').addEventListener('change', e => {
+  if (!shiftLogTimes(e.target.value)) return;
   syncLog(); analyze(); setTimesFromLog(); markDirty(); renderAll();
 });
 $('liveSource').addEventListener('change', e => { $('baudRow').hidden = e.target.value !== 'serial'; });

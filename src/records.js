@@ -149,6 +149,9 @@ export function complianceCheck(rec) {
     { ref: '10', label: 'Amount applied and concentration', ok: all(p => productTotals(p, rec) && has(p.ai)), step: 'products' },
     { ref: '11', label: 'Crop or site treated', ok: has(rec.job.crop), step: 'finish' },
     { ref: 'form', label: 'Applicator license (AP) number', ok: has(rec.applicator.cert), step: 'finish' },
+    // Not one of the rule's eleven items (item 6 is only who applied it), but asked for so the record
+    // shows how to reach the applicator: a record without it is not marked complete.
+    { ref: 'addr', label: 'Applicator business address', ok: has(rec.applicator.address), step: 'finish' },
     { ref: 'REI', label: 'Re-entry hours for every pesticide', ok: prods.length > 0 && !missingRei(rec).length, step: 'products' },
   ];
   if (prods.some(p => p.rup)) {

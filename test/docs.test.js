@@ -76,3 +76,18 @@ test('PDF file names are safe', () => {
   const r = record(); r.job.field = 'North 40 / "east" field';
   assert.equal(fileName('customer-report', r), '2026-06-14-North-40-east-field-customer-report.pdf');
 });
+
+test('state record shows the applicator business address, and a record without it is not complete', () => {
+  const t = textOf(stateRecord(record()));
+  assert.ok(t.includes('BUSINESS ADDRESS') && t.includes('Menno SD'));
+  const r = record(); r.applicator.address = '';
+  const u = textOf(stateRecord(r));
+  assert.ok(u.includes('Not complete') && u.includes('Applicator business address'));
+});
+
+test('customer report: re-entry time uses the longest REI in the mix', () => {
+  const r = record();
+  r.products.push({ ...r.products[0], name: 'Second product', rei: '48' });
+  const t = textOf(customerReport(r));
+  assert.ok(t.includes('Jun 16, 2026, 8:33 AM'), 're-entry 48 h after the 08:33 finish');
+});

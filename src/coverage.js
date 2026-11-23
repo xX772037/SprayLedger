@@ -25,7 +25,9 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
     const a = pts[i], b = pts[i + 1];
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     const bothSpraying = a.spray && b.spray && a.flight === b.flight;
-    const ok = bothSpraying && (b.t - a.t) <= maxGapS * 1000 && len <= maxJumpM;
+    // Tracks from KML/GeoJSON files can have no times (t: null); then only the distance test applies.
+    const timed = Number.isFinite(a.t) && Number.isFinite(b.t);
+    const ok = bothSpraying && (!timed || (b.t - a.t) <= maxGapS * 1000) && len <= maxJumpM;
     // Spraying at both ends but too far apart in time or space to trust: left out, and reported.
     if (bothSpraying && !ok) { if (len > maxJumpM) dropped.jumps++; else dropped.gaps++; dropped.metres += len; }
     if (ok) {
@@ -162,16 +164,17 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
 
   // Volume: trapezoidal integration of flow while spraying.
   let volumeL = 0, sprayMs = 0;
+  const timed = pts.some(p => Number.isFinite(p.t));
   const hasFlow = pts.some(p => Number.isFinite(p.flowLpm));
   const flights = new Map();
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
     let f = flights.get(p.flight);
-    if (!f) { f = { id: p.flight, start: p.t, end: p.t, sprayStart: null, sprayEnd: null, volumeL: 0, points: 0 }; flights.set(p.flight, f); }
+    if (!f) { f = { id: p.flight, start: p.t, end: p.t, sprayStart: null, sprayEnd: null, sprayed: false, volumeL: 0, points: 0 }; flights.set(p.flight, f); }
     f.end = p.t; f.points++;
     const q = pts[i + 1];
-    if (p.spray) { f.sprayStart ??= p.t; f.sprayEnd = p.t; }
-    if (q && q.flight === p.flight && p.spray && q.spray && q.t - p.t <= maxGapS * 1000) {
+    if (p.spray) { f.sprayed = true; if (Number.isFinite(p.t)) { f.sprayStart ??= p.t; f.sprayEnd = p.t; } }
+    if (q && q.flight === p.flight && p.spray && q.spray && Number.isFinite(p.t) && Number.isFinite(q.t) && q.t - p.t <= maxGapS * 1000) {
       const dt = (q.t - p.t) / 60000;
       sprayMs += q.t - p.t;
       if (Number.isFinite(p.flowLpm) && Number.isFinite(q.flowLpm)) {
@@ -181,7 +184,7 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
     }
   }
   let firstSpray = Infinity, lastSpray = -Infinity;
-  for (const p of pts) if (p.spray) { if (p.t < firstSpray) firstSpray = p.t; if (p.t > lastSpray) lastSpray = p.t; }
+  for (const p of pts) if (p.spray && Number.isFinite(p.t)) { if (p.t < firstSpray) firstSpray = p.t; if (p.t > lastSpray) lastSpray = p.t; }
 
   const fieldM2 = hasBoundary ? boundaryArea(polys) : sprayedCells * cellA;
   return {
@@ -193,8 +196,9 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
     flights: [...flights.values()],
     hasBoundary,
     hasFlow,
-    start: Number.isFinite(firstSpray) ? firstSpray : pts[0].t,
-    end: Number.isFinite(lastSpray) ? lastSpray : pts[pts.length - 1].t,
+    timed,
+    start: Number.isFinite(firstSpray) ? firstSpray : timed ? pts.find(p => Number.isFinite(p.t)).t : null,
+    end: Number.isFinite(lastSpray) ? lastSpray : timed ? pts.findLast(p => Number.isFinite(p.t)).t : null,
     stats: {
       fieldM2,
       fieldRasterM2: fieldCells * cellA,
@@ -206,7 +210,7 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
       coveragePct: hasBoundary && fieldCells ? (100 * covered) / fieldCells : null,
       overlapPct: hasBoundary && fieldCells ? (100 * overlap) / fieldCells : null,
       volumeL: hasFlow ? volumeL : null,
-      sprayMinutes: sprayMs / 60000,
+      sprayMinutes: timed ? sprayMs / 60000 : null,
       dropped,
     },
   };
