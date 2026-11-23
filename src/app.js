@@ -1203,7 +1203,8 @@ $('btnNew').addEventListener('click', e => {
 });
 $('btnSample').addEventListener('click', e => {
   const go = () => { loadSample(); state.step = 'spray'; showView('job'); };
-  if (state.dirty && state.rec.summary) confirmClick(e.currentTarget, 'Discard unsaved job?', go);
+  // a real job saves itself first; the practice job has nothing worth keeping
+  if (state.dirty && !state.practice) autoSave().then(go);
   else go();
 });
 $('recList').addEventListener('click', e => {
