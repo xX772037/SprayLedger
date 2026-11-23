@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { inflateSync } from 'node:zlib';
 import { emptyRecord } from '../src/records.js';
 
 // Load the vendored jsPDF the way a browser does (a classic script that sets window.jspdf).
@@ -11,8 +12,25 @@ vm.runInThisContext(`(function (self) { ${readFileSync(new URL('../vendor/jspdf/
 window.jspdf = globalThis.jspdf;
 const { customerReport, stateRecord, fileName } = await import('../src/docs.js');
 
-// jsPDF writes text uncompressed as (…) Tj; join every text run so phrases split across runs still match.
-const textOf = doc => doc.output().match(/\((?:\\.|[^\\)])*\)\s*Tj/g).map(s => s.slice(1, s.lastIndexOf(')')).replace(/\\(.)/g, '$1')).join(' ');
+// The PDFs are compressed, so inflate each page stream first, then join every (…) Tj text run so
+// phrases split across runs still match.
+const pageStreams = doc => {
+  const raw = Buffer.from(doc.output(), 'latin1'), out = [];
+  const re = /(?<!end)stream\r?\n/g; let m;
+  const bin = raw.toString('latin1');
+  while ((m = re.exec(bin))) {
+    const start = m.index + m[0].length, end = bin.indexOf('endstream', start);
+    if (end < 0) break;
+    try { out.push(inflateSync(raw.subarray(start, end)).toString('latin1')); } catch { out.push(bin.slice(start, end)); }
+    re.lastIndex = end;
+  }
+  return out.join('\n');
+};
+const textOf = doc => pageStreams(doc).match(/\((?:\\.|[^\\)])*\)\s*Tj/g).map(s => s.slice(1, s.lastIndexOf(')')).replace(/\\(.)/g, '$1')).join(' ');
+test('PDFs are compressed', () => {
+  const r = emptyRecord();
+  assert.match(customerReport(r, {}).output(), /FlateDecode/);
+});
 
 function record() {
   const r = emptyRecord();
