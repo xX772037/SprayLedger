@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SprayLedger</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Spray application records for drone and ground applicators: field, weather, coverage, products and the customer and state documents.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="appbar-in">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M4 22h24M4 26h24" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M8 18c2-6 6-10 8-12 2 2 6 6 8 12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="12" r="2.6" fill="currentColor"/></svg>
+      <span>SprayLedger</span>
+    </div>
+    <nav class="appbar-actions" aria-label="Main">
+      <button type="button" id="btnJobs" class="btn">My jobs <span class="count" id="recCount">0</span></button>
+      <button type="button" id="btnNew" class="btn btn-primary">New job</button>
+      <button type="button" id="btnText" class="btn btn-icon" aria-label="Make text bigger" title="Text size"><span class="aa">A<span>A</span></span></button>
+    </nav>
+  </div>
+</header>
+
+<main class="app">
+
+  <!-- ================= MY JOBS ================= -->
+  <section id="viewJobs" class="view" aria-labelledby="jobsTitle" hidden>
+    <div class="view-head">
+      <h1 id="jobsTitle">My jobs</h1>
+      <div class="row-actions">
+        <button type="button" id="btnExport" class="btn">Export all to a spreadsheet</button>
+        <button type="button" id="btnSample" class="btn">Open the practice job</button>
+      </div>
+    </div>
+    <p class="note" id="storageNote" hidden></p>
+    <ul id="recList" class="job-list"></ul>
+    <p class="empty" id="recEmpty">No saved jobs yet. Tap <b>New job</b> to start one, or open the practice job to see how it works.</p>
+  </section>
+
+  <!-- ================= ONE JOB ================= -->
+  <section id="viewJob" class="view" aria-labelledby="jobTitle">
+    <div class="job-head">
+      <h1 id="jobTitle">New job</h1>
+      <span class="save-state" id="saveState" aria-live="polite"></span>
+    </div>
+
+    <nav class="steps" role="tablist" aria-label="Job steps">
+      <button type="button" role="tab" data-step="field"><span class="n">1</span><span class="t">Field</span></button>
+      <button type="button" role="tab" data-step="weather"><span class="n">2</span><span class="t">Plan</span></button>
+      <button type="button" role="tab" data-step="spray"><span class="n">3</span><span class="t">Spray</span></button>
+      <button type="button" role="tab" data-step="products"><span class="n">4</span><span class="t">Products</span></button>
+      <button type="button" role="tab" data-step="finish"><span class="n">5</span><span class="t">Details</span></button>
+      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t">Documents</span></button>
+    </nav>
+
+    <header class="step-head">
+      <p class="step-count" id="stepCount">Step 1 of 6</p>
+      <h2 id="stepTitle">Choose the field</h2>
+      <p class="lead" id="stepHint"></p>
+    </header>
+
+    <ul class="notices" id="notices" aria-live="polite"></ul>
+
+    <!-- STEP 1: FIELD -->
+    <section class="step" data-panel="field" role="tabpanel" aria-label="Field">
+      <div class="row-actions">
+        <button type="button" class="btn btn-big" id="btnDraw">Draw the field</button>
+        <button type="button" class="btn btn-big" id="btnLoadBoundary">Load a boundary file</button>
+      </div>
+      <div class="map-slot" data-map-slot="field"></div>
+      <details class="fold" id="ownersFold" open>
+        <summary>Land owners</summary>
+        <section id="ownersPanel" aria-label="Land owners">
+          <div class="owners-head">
+            <label class="inline-field" for="nbDist">Show neighbours within
+              <select id="nbDist"><option value="402">¼ mile</option><option value="805">½ mile</option><option value="1609">1 mile</option></select>
+            </label>
+            <button type="button" class="btn" id="ownersRefresh">Look up again</button>
+          </div>
+          <div id="owners"><p class="sub">Choose the field to see who owns it and the land around it.</p></div>
+        </section>
+      </details>
+    </section>
+
+    <!-- STEP 2: WEATHER -->
+    <section class="step" data-panel="weather" role="tabpanel" aria-label="Plan" hidden>
+      <section class="plan-card" aria-labelledby="planTitle">
+        <h2 id="planTitle">What are you spraying with?</h2>
+        <label for="f_model">Drone or sprayer
+          <select id="f_model"></select>
+        </label>
+        <p class="sub" id="droneSpec"></p>
+        <div class="grid4 plan-inputs">
+          <label>Swath, feet <input id="f_swathPlan" data-path="equipment.swathFt" type="number" min="3" max="150" step="0.5" inputmode="decimal"></label>
+          <label>Tank, gallons <input id="f_tank" data-path="equipment.tankGal" type="number" min="0" step="0.1" inputmode="decimal"></label>
+          <label>Pump, gal per minute <input id="f_flow" data-path="equipment.flowGpm" type="number" min="0" step="0.1" inputmode="decimal"></label>
+          <label>Gallons per acre <input id="f_gpa" data-path="equipment.targetGpa" type="number" step="0.1" min="0" inputmode="decimal"></label>
+        </div>
+        <div class="plan-out" id="planOut" aria-live="polite"></div>
+      </section>
+      <section class="wx" id="wx" aria-label="Spray conditions">
+        <div class="wx-head">
+          <h2>Is it OK to spray?</h2>
+          <span class="chip" id="wxChip"></span>
+        </div>
+        <div id="wxBody" class="wx-body"><p class="sub">Choose the field first. The forecast is for that spot.</p></div>
+        <div class="wx-foot">
+          <span class="sub" id="wxWhere"></span>
+          <button type="button" class="btn" id="wxRefresh">Update forecast</button>
+        </div>
+      </section>
+      <div class="map-slot" data-map-slot="weather"></div>
+    </section>
+
+    <!-- STEP 3: SPRAY -->
+    <section class="step" data-panel="spray" role="tabpanel" aria-label="Spray" hidden>
+      <div class="choice" role="tablist" aria-label="How to record coverage">
+        <button type="button" role="tab" id="tabLog" aria-selected="true" aria-controls="paneLog">Load the drone's flight log</button>
+        <button type="button" role="tab" id="tabLive" aria-selected="false" aria-controls="paneLive">Track it live</button>
+      </div>
+
+      <div id="paneLog" role="tabpanel" aria-labelledby="tabLog" class="pane" >
+        <div class="drop" id="dropzone">
+          <p>Pick the flight log file the drone app saved (CSV, KML or GeoJSON). You can also drag files onto this page.</p>
+          <div class="row-actions">
+            <label class="btn btn-primary btn-big file-btn">
+              <input type="file" id="fileInput" multiple accept=".csv,.txt,.kml,.geojson,.json">
+              Choose flight log
+            </label>
+            <label class="inline-field" for="swath">Spray width
+              <input id="swath" data-path="equipment.swathFt" type="number" min="3" max="150" step="0.5" value="23" inputmode="decimal"> ft
+            </label>
+          </div>
+          <p class="files" id="files"></p>
+        </div>
+      </div>
+
+      <div id="paneLive" role="tabpanel" aria-labelledby="tabLive" class="pane" hidden>
+        <p class="lead">For a sprayer you ride on: keep this phone or tablet in the cab. The field turns from red to green as you spray.</p>
+        <div class="row-actions">
+          <label class="inline-field" for="liveSource">GPS from
+            <select id="liveSource">
+              <option value="device">This phone or tablet</option>
+              <option value="serial">GPS receiver plugged in (USB)</option>
+              <option value="sim">Practice run (no GPS needed)</option>
+            </select>
+          </label>
+          <label class="inline-field" for="liveBoom">Boom width
+            <input id="liveBoom" type="number" min="3" max="150" step="0.5" value="90" inputmode="decimal"> ft
+          </label>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn btn-primary btn-big" id="liveStart">Start tracking</button>
+          <button type="button" class="btn btn-big" id="liveStop" hidden>Stop tracking</button>
+        </div>
+        <div class="live-run" id="liveRun" hidden>
+          <button type="button" class="boom" id="boomSwitch" aria-pressed="false">
+            <span class="boom-state" id="boomState">Boom off</span>
+            <span class="boom-hint">Tap when the sprayer turns on or off</span>
+          </button>
+          <dl class="live-stats">
+            <div><dt>Speed</dt><dd id="lvSpeed">—</dd></div>
+            <div><dt>GPS</dt><dd id="lvAcc">—</dd></div>
+            <div><dt>Sprayed</dt><dd id="lvSprayed">—</dd></div>
+            <div><dt>Field done</dt><dd id="lvPct">—</dd></div>
+            <div><dt>Left</dt><dd id="lvLeft">—</dd></div>
+            <div><dt>Time left</dt><dd id="lvEta">—</dd></div>
+          </dl>
+          <button type="button" class="btn btn-big" id="liveSave" disabled>Done: save this track to the job</button>
+        </div>
+        <p class="sub" id="liveHelp">Phone GPS is good to about 10–15 feet. A GPS receiver with RTK is good to about an inch. Drones: load the flight log after each flight instead.</p>
+      </div>
+
+      <div class="map-slot" data-map-slot="spray"></div>
+      <section class="stats" id="stats" aria-label="Coverage summary"></section>
+
+      <details class="fold">
+        <summary>Missed spots and flight details</summary>
+        <div class="fold-body">
+          <h3>Missed spots to re-spray</h3>
+          <p class="sub">Largest first. The numbers match the pins on the map.</p>
+          <ol class="gaps" id="gaps"></ol>
+          <h3>Flights</h3>
+          <div class="table-wrap">
+            <table class="flights">
+              <thead><tr><th>#</th><th>Spraying</th><th class="num">Minutes</th><th class="num">Gallons</th></tr></thead>
+              <tbody id="flights"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- STEP 4: PRODUCTS -->
+    <section class="step" data-panel="products" role="tabpanel" aria-label="Products" hidden>
+      <p class="note" id="gpaNote"></p>
+      <div id="products"></div>
+      <button type="button" class="btn btn-big" id="addProduct">Add another product</button>
+    </section>
+
+    <!-- STEP 5: FINISH -->
+    <section class="step" data-panel="finish" role="tabpanel" aria-label="Details" hidden>
+      <fieldset>
+        <legend>Customer and field</legend>
+        <div class="grid2">
+          <label>Customer name <input id="f_farm" data-path="job.farm" autocomplete="off"></label>
+          <label>Customer address <input id="f_caddr" data-path="job.customerAddress" autocomplete="off"></label>
+          <label>Field name <input id="f_field" data-path="job.field"></label>
+          <label>Legal description (S-T-R) <input id="f_legal" data-path="job.legal" placeholder="e.g. NE¼ 6-98-58"></label>
+          <label>Crop or site <input id="f_crop" data-path="job.crop" list="crops"></label>
+          <label>Pest(s), name from the label <input id="f_pest" data-path="job.pest"></label>
+          <label>Parcel no(s). <input id="f_parcels" data-path="job.parcels"></label>
+          <label>Land owner <input id="f_landowner" data-path="job.landowner"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Date and time</legend>
+        <div class="grid3">
+          <label>Date <input type="date" id="f_date" data-path="job.date"></label>
+          <label>Start <input type="time" id="f_start" data-path="job.start"></label>
+          <label>Finish <input type="time" id="f_end" data-path="job.end"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Weather while spraying</legend>
+        <div class="grid2">
+          <label>Wind speed, mph <input id="f_wind" data-path="conditions.wind" type="number" step="0.5" inputmode="decimal"></label>
+          <label>Wind from <select id="f_winddir" data-path="conditions.windDir">
+            <option value=""></option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SW</option><option>W</option><option>NW</option><option>Calm</option><option>Variable</option>
+          </select></label>
+          <label>Temperature, °F <input id="f_temp" data-path="conditions.temp" type="number" step="1" inputmode="decimal"></label>
+          <label>Humidity, % <input id="f_hum" data-path="conditions.humidity" type="number" step="1" inputmode="decimal"></label>
+          <label class="span2">Where the weather came from <input id="f_wxsrc" data-path="conditions.source" list="wxsources" placeholder="e.g. Measured on site"></label>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="wxFill">Fill in from weather records</button>
+        </div>
+        <p class="sub" id="wxFillState">Uses the weather at the field when the job started. A reading taken on site is better if you have one.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Applicator and equipment</legend>
+        <p class="sub">These carry over to your next job.</p>
+        <div class="grid2">
+          <label>Applicator name <input id="f_appname" data-path="applicator.name"></label>
+          <label>Applicator license (AP) no. <input id="f_cert" data-path="applicator.cert"></label>
+          <label>Business name <input id="f_company" data-path="applicator.company"></label>
+          <label>Business phone <input id="f_phone" data-path="applicator.phone" type="tel" inputmode="tel"></label>
+          <label class="span2">Business address <input id="f_baddr" data-path="applicator.address"></label>
+          <label>Drone or sprayer <input id="f_drone" data-path="equipment.drone"></label>
+          <label>Serial or FAA reg. <input id="f_serial" data-path="equipment.serial"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Notes</legend>
+        <label class="sr-only" for="f_notes">Notes</label>
+        <textarea id="f_notes" data-path="notes" rows="3"></textarea>
+        <details class="fold small">
+          <summary>Change acres or gallons</summary>
+          <div class="grid2 fold-body">
+            <label>Acres treated <input id="f_acres" data-path="job.acresOverride" type="number" step="0.01" inputmode="decimal"></label>
+            <label>Gallons sprayed <input id="f_gal" data-path="volumeGalOverride" type="number" step="0.1" inputmode="decimal"></label>
+          </div>
+          <p class="sub">These come from the GPS record. Type a number only if it's wrong.</p>
+        </details>
+      </fieldset>
+
+      <div class="row-actions finish-actions">
+        <button type="button" class="btn btn-primary btn-big" id="btnSave">Save job</button>
+      </div>
+    </section>
+
+    <!-- STEP 6: DOCUMENTS -->
+    <section class="step" data-panel="docs" role="tabpanel" aria-label="Documents" hidden>
+      <section class="check-card" aria-labelledby="checkTitle">
+        <div class="check-head"><h3 id="checkTitle">Is the record complete?</h3><span class="chip" id="complianceChip"></span></div>
+        <ul id="checklist" class="checklist"></ul>
+        <p class="sub">These are the 11 items South Dakota requires on every application record (ARSD 12:56:07:01), plus your license number from the state form.</p>
+      </section>
+
+      <section class="intervals" id="intervals" aria-label="Re-entry and harvest dates"></section>
+
+      <section class="docs" aria-label="PDF documents">
+        <p class="note" id="docWarn" hidden></p>
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
+            <h3>Customer report</h3>
+            <p>For the farmer: what was sprayed, when people can go back in, the earliest harvest date, and the coverage map. 2 pages.</p>
+          </div>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" data-doc="customer" data-act="save">Download PDF</button>
+            <button type="button" class="btn btn-big" data-doc="customer" data-act="send" hidden>Text or email it</button>
+          </div>
+        </article>
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
+            <h3>South Dakota application record</h3>
+            <p>For your files, numbered like the state's form. Keep it for <b>3 years</b> and give a copy to the state (SD DANR) if they ask. It isn't mailed in after each job. 2 pages.</p>
+          </div>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" data-doc="state" data-act="save">Download PDF</button>
+            <button type="button" class="btn btn-big" data-doc="state" data-act="send" hidden>Text or email it</button>
+          </div>
+        </article>
+        <p class="doc-state" id="docState" aria-live="polite"></p>
+      </section>
+
+      <div class="row-actions finish-actions">
+        <button type="button" class="btn btn-danger" id="btnDelete" hidden>Delete this job</button>
+      </div>
+    </section>
+
+    <nav class="step-nav" aria-label="Step navigation">
+      <button type="button" class="btn btn-big" id="stepPrev">Back</button>
+      <button type="button" class="btn btn-big btn-primary" id="stepNext">Next</button>
+    </nav>
+  </section>
+</main>
+
+<!-- The map moves into the slot of whichever step is showing. -->
+<section class="mapcard" id="mapcard" aria-label="Map">
+  <div class="map-wrap">
+    <div id="map" aria-label="Map of the field"></div>
+    <div class="map-note" id="mapEmpty">Type the field's address in the box at the top left, or tap ◎ to go to where you are.</div>
+    <div class="search-results" id="searchResults" hidden aria-live="polite"></div>
+    <div class="map-note map-note-warn" id="tileNote" hidden>The satellite picture can't load here. It shows when the app runs on its own web address.</div>
+    <div class="draw-bar" id="drawBar" hidden>
+      <span>Tap each corner of the field. <b id="drawCount">0</b> corners.</span>
+      <button type="button" class="btn" id="drawUndo">Undo</button>
+      <button type="button" class="btn btn-primary" id="drawDone">Done</button>
+      <button type="button" class="btn" id="drawCancel">Cancel</button>
+    </div>
+  </div>
+  <div class="map-foot">
+    <ul class="legend">
+      <li data-key="cov"><i class="sw sw-cov"></i>Sprayed</li>
+      <li data-key="skip"><i class="sw sw-skip"></i>Not sprayed</li>
+      <li data-key="ovl"><i class="sw sw-ovl"></i>Sprayed twice</li>
+      <li data-key="off"><i class="sw sw-off"></i>Outside field</li>
+      <li data-key="dw"><i class="sw sw-dw"></i>Downwind edge</li>
+      <li data-key="nb"><i class="sw sw-nb"></i>Downwind neighbour</li>
+    </ul>
+    <div class="map-toggles">
+      <label class="check"><input type="checkbox" id="showParcels" checked> Show parcels</label>
+      <label class="check"><input type="checkbox" id="showTrack"> Show flight path</label>
+    </div>
+    <p class="map-hint"><span id="parcelHint"></span> <span id="probe"></span></p>
+  </div>
+</section>
+
+<datalist id="crops">
+  <option>Corn</option><option>Soybeans</option><option>Wheat</option><option>Alfalfa</option><option>Oats</option><option>Barley</option>
+  <option>Sunflowers</option><option>Sorghum</option><option>Pasture</option><option>Range</option><option>Fallow</option><option>Right of way</option>
+</datalist>
+<datalist id="wxsources">
+  <option>Measured on site</option><option>SD Mesonet</option><option>National Weather Service</option><option>Open-Meteo (modelled)</option>
+</datalist>
+
+<dialog id="exportDialog" aria-labelledby="exportTitle">
+  <form method="dialog" class="dialog-body">
+    <h2 id="exportTitle">Export all jobs</h2>
+    <p id="exportSummary"></p>
+    <textarea id="exportText" rows="8" readonly spellcheck="false" aria-label="Spreadsheet text"></textarea>
+    <div class="row-actions">
+      <button type="button" class="btn btn-primary btn-big" id="exportDownload">Save spreadsheet file</button>
+      <button type="button" class="btn btn-big" id="exportCopy">Copy</button>
+      <button class="btn btn-big" value="close">Close</button>
+    </div>
+    <p class="sub" id="exportState" aria-live="polite"></p>
+  </form>
+</dialog>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/jspdf/jspdf.umd.min.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
