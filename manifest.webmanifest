@@ -1,0 +1,11 @@
+{
+  "name": "SprayLedger",
+  "short_name": "SprayLedger",
+  "description": "Spray job records for drone and ground applicators.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1b6b3f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

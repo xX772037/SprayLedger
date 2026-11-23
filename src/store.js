@@ -31,7 +31,9 @@ export async function persistent() { await open(); return memory === null; }
 export async function listRecords() {
   const db = await open();
   const all = db ? await tx(db, 'readonly', s => s.getAll()) : [...memory.values()];
-  return all.sort((a, b) => (b.job.date || '').localeCompare(a.job.date || '') || b.updatedAt - a.updatedAt);
+  // A damaged or very old saved record must not stop the whole list from opening.
+  const date = r => (r && r.job && typeof r.job.date === 'string' ? r.job.date : '');
+  return all.filter(r => r && typeof r === 'object' && r.id).sort((a, b) => date(b).localeCompare(date(a)) || (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
 export async function saveRecord(rec) {

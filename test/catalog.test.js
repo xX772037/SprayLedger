@@ -19,7 +19,7 @@ test('job plan: gallons, tank loads and time', () => {
   assert.equal(p.loads, 16);                  // 40 L ≈ 10.57 gal per load
   assert.equal(p.mph, 15); assert.equal(p.flowLimited, false);
   assert.ok(p.acPerHour > 40 && p.acPerHour < 46, `ac/h ${p.acPerHour}`);
-  assert.ok(Math.abs(p.totalHours - (80 / p.acPerHour + 16 * 4 / 60)) < 1e-9);
+  assert.ok(Math.abs(p.totalHours - (80 / p.acPerHour + 15 * 4 / 60)) < 1e-9); // 15 refills after the first fill
 });
 
 test('a small pump at a high rate limits ground speed', () => {
@@ -37,7 +37,8 @@ test('picking a product fills label facts only, never rate or PHI', () => {
   assert.deepEqual([a.name, a.epa, a.company, a.ai, a.rei, a.rate, a.phi], ['Veltyma', '7969-409', 'BASF', '1.67 + 1.67 lb per gal', '12', '8', '21']);
   // switching to a product with fewer known facts clears the previous product's facts
   const b = applyCatalogProduct(a, PRODUCTS.find(p => p.name === 'Trivapro'));
-  assert.equal(b.ai, ''); assert.equal(b.rei, ''); assert.equal(b.epa, '100-1613');
+  assert.equal(b.ai, ''); assert.equal(b.rei, '12'); assert.equal(b.epa, '100-1613');
+  assert.equal(applyCatalogProduct(b, PRODUCTS.find(p => p.name === 'Delaro Complete')).rei, '', 'an unconfirmed REI is left blank');
   assert.equal(applyCatalogProduct(typed, PRODUCTS.find(p => p.name === 'Tordon 22K')).rup, true);
 });
 

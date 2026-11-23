@@ -6,12 +6,21 @@
 //   :03  kept three years from the application date; a copy to the department on request
 //   :04  a commercial applicator gives the customer a record on written request
 //   :05  the department may ask for a yearly summary by county
+// The federal restricted-use recordkeeping rule (7 CFR Part 110) was rescinded by USDA effective July 11, 2025
+// (90 FR 20083), so the state rule above is what these records follow.
 
 export const UNITS = ['fl oz', 'pt', 'qt', 'gal', 'oz', 'lb', 'mL', 'L', 'g', 'kg'];
 const LIQUID_TO_GAL = { 'fl oz': 1 / 128, pt: 1 / 8, qt: 1 / 4, gal: 1, mL: 1 / 3785.411784, L: 1 / 3.785411784 };
 const DRY_TO_LB = { oz: 1 / 16, lb: 1, g: 1 / 453.59237, kg: 2.20462262 };
 
-export const blankProduct = () => ({ name: '', common: '', company: '', epa: '', ai: '', rate: '', unit: 'fl oz', rei: '', phi: '', rup: false });
+export const blankProduct = () => ({ name: '', common: '', company: '', epa: '', ai: '', rate: '', unit: 'fl oz', rei: '', phi: '', rup: false, kind: '' });
+
+/** Adjuvants (surfactants, oils, AMS…) go in the tank but aren't pesticides, so the pesticide label items don't apply. */
+export function isAdjuvant(p) {
+  if (p.kind) return p.kind === 'adjuvant';
+  return /surfactant|crop oil|seed oil|ammonium sulfate|adjuvant|drift (control|retard)|defoamer|\b(NIS|COC|MSO|AMS|HSOC)\b/i.test(`${p.name} ${p.common}`) && !p.epa;
+}
+const pesticides = rec => rec.products.filter(p => String(p.name || '').trim() && !isAdjuvant(p));
 
 export function emptyRecord() {
   return {
@@ -86,12 +95,27 @@ function at(dateStr, timeStr) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Restricted-entry interval: no entry until the application ends plus the longest REI in the mix. */
-export function reentryTime(rec) {
-  const reis = rec.products.map(p => num(p.rei)).filter(Number.isFinite);
+/** Pesticides in the tank whose re-entry interval hasn't been entered. */
+export function missingRei(rec) {
+  return pesticides(rec).filter(p => !Number.isFinite(num(p.rei)));
+}
+
+/** When the job finished; a finish time earlier than the start means the job ran past midnight. */
+function finishedAt(rec) {
   const end = at(rec.job.date, rec.job.end || rec.job.start);
-  if (!reis.length || !end) return null;
-  return new Date(end.getTime() + Math.max(...reis) * 3600_000);
+  if (end && rec.job.start && rec.job.end && rec.job.end < rec.job.start) end.setDate(end.getDate() + 1);
+  return end;
+}
+
+/**
+ * Restricted-entry interval: no entry until the application ends plus the longest REI in the mix.
+ * Unknown (null) when any pesticide's REI is missing: a shorter REI from the other products must never stand in.
+ */
+export function reentryTime(rec) {
+  const ps = pesticides(rec);
+  const end = finishedAt(rec);
+  if (!ps.length || !end || missingRei(rec).length) return null;
+  return new Date(end.getTime() + Math.max(...ps.map(p => num(p.rei))) * 3600_000);
 }
 
 /** Pre-harvest interval: earliest harvest date is the application date plus the longest PHI. */
@@ -104,11 +128,12 @@ export function harvestDate(rec) {
 }
 
 /**
- * The eleven items of ARSD 12:56:07:01, plus the applicator license number the state form asks for,
- * plus the federal restricted-use items (7 CFR 110) when a product is marked restricted use.
+ * The eleven items of ARSD 12:56:07:01 (checked against the current rule text), the applicator license
+ * number the state form asks for, the re-entry interval of every pesticide (so the safety date is right),
+ * and the EPA Reg. No. of any restricted-use product. Adjuvants aren't held to the pesticide items.
  */
 export function complianceCheck(rec) {
-  const prods = rec.products.filter(p => has(p.name));
+  const prods = pesticides(rec);
   const all = f => prods.length > 0 && prods.every(f);
   const located = rec.summary?.lat != null || has(rec.job.legal) || !!rec.log?.boundary?.length;
   const items = [
@@ -124,9 +149,10 @@ export function complianceCheck(rec) {
     { ref: '10', label: 'Amount applied and concentration', ok: all(p => productTotals(p, rec) && has(p.ai)), step: 'products' },
     { ref: '11', label: 'Crop or site treated', ok: has(rec.job.crop), step: 'finish' },
     { ref: 'form', label: 'Applicator license (AP) number', ok: has(rec.applicator.cert), step: 'finish' },
+    { ref: 'REI', label: 'Re-entry hours for every pesticide', ok: prods.length > 0 && !missingRei(rec).length, step: 'products' },
   ];
   if (prods.some(p => p.rup)) {
-    items.push({ ref: 'RUP', label: 'EPA reg. no. for restricted-use products', ok: prods.filter(p => p.rup).every(p => has(p.epa)), step: 'products' });
+    items.push({ ref: 'RUP', label: 'EPA Reg. No. for restricted-use products', ok: prods.filter(p => p.rup).every(p => has(p.epa)), step: 'products' });
   }
   return { items, missing: items.filter(i => !i.ok), complete: items.every(i => i.ok) };
 }

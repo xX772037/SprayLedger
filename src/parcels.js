@@ -70,6 +70,7 @@ export function parcelCenter(parcel) {
   return [la / n, lo / n];
 }
 
+// Every ring sent is an outer ring (the field's outline and the search strips; never holes), so all are clockwise.
 function esriGeometry(geom) {
   if (geom.bbox) {
     const [s, w, n, e] = geom.bbox;
@@ -119,8 +120,12 @@ export async function queryParcels(geom, { fetchImpl = fetch, signal, maxPages =
         errors.push({ county: src.county, message: e.message || 'unreachable' });
         return;
       }
-      for (const f of json.features || []) { const p = normalizeFeature(f, src); if (p) parcels.push(p); }
-      if (!json.exceededTransferLimit && !(json.properties?.exceededTransferLimit)) break;
+      const feats = json.features || [];
+      for (const f of feats) { const p = normalizeFeature(f, src); if (p) parcels.push(p); }
+      // GeoJSON output may not carry the "more results" flag, so a full page always means: ask for the next one.
+      const more = json.exceededTransferLimit || json.properties?.exceededTransferLimit || feats.length >= 1000;
+      if (!more) break;
+      if (page === pages - 1) errors.push({ county: src.county, message: 'more parcels than one look-up returns; zoom in' });
     }
   }));
   // Same parcel can come back from two pages or adjacent counties' edges.
@@ -219,6 +224,21 @@ function ringsDistance(As, Bs) {
   return d;
 }
 
+/** Fraction of a parcel's area that lies inside the field, estimated on a 20 × 20 grid of points. */
+function shareInside(rings, polysXY) {
+  const pts = rings.flat();
+  const [x0, x1] = [Math.min(...pts.map(p => p[0])), Math.max(...pts.map(p => p[0]))];
+  const [y0, y1] = [Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[1]))];
+  let inParcel = 0, inBoth = 0;
+  for (let i = 0; i < 20; i++) for (let j = 0; j < 20; j++) {
+    const x = x0 + (i + 0.5) * (x1 - x0) / 20, y = y0 + (j + 0.5) * (y1 - y0) / 20;
+    if (!rings.some(r => pointInBoundary(x, y, [[r]]))) continue;
+    inParcel++;
+    if (pointInBoundary(x, y, polysXY)) inBoth++;
+  }
+  return inParcel ? inBoth / inParcel : 0;
+}
+
 /**
  * Split parcels into those that make up the field (centre inside the boundary) and neighbours that
  * overlap the search zone, grouped by owner and sorted by edge-to-edge distance from the field.
@@ -231,15 +251,18 @@ export function classifyParcels(parcels, zone) {
   const field = [], others = [];
   for (const p of parcels) {
     const c = proj.toXY(...parcelCenter(p));
-    if (pointInBoundary(c[0], c[1], polysXY)) { field.push(p); continue; }
     const rings = p.polygons.map(poly => toXY(poly[0]));
+    // Part of the field when its centre is inside, or when at least half the parcel lies inside the field
+    // (catches L-shaped parcels and parcels that straddle the field edge).
+    if (pointInBoundary(c[0], c[1], polysXY) || shareInside(rings, polysXY) >= 0.5) { field.push(p); continue; }
     // Must share real area (over 10 m²) with the search zone; a parcel that only touches the field upwind is left out.
     if (!rings.some(r => zoneXY.some(z => clippedArea(r, z) > 10))) continue;
     others.push({ ...p, distM: ringsDistance(rings, fieldRings) });
   }
   const byOwner = new Map();
   for (const p of others) {
-    const key = p.owner ? p.owner.toUpperCase() : `~${p.id}`;
+    // Same name AND same mailing address: two different people who share a name stay separate.
+    const key = p.owner ? `${p.owner.toUpperCase()}|${String(p.mailing || '').toUpperCase()}` : `~${p.id}`;
     const g = byOwner.get(key) || { owner: p.owner, mailing: p.mailing, parcels: [], distM: Infinity, acres: 0 };
     g.parcels.push(p); g.distM = Math.min(g.distM, p.distM); g.acres += p.acres || 0;
     if (!g.mailing && p.mailing) g.mailing = p.mailing;
@@ -264,6 +287,12 @@ export function parseAddress(text) {
   const t = String(text).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
   if (!t.length) return null;
   const num = /^\d+$/.test(t[0]) ? t.shift() : null;
+  // "County Road 5", "CR 5", "Highway 37": the road is the number that follows.
+  const k = t.findIndex((w, i) => (w === 'COUNTY' && /^(ROAD|RD)$/.test(t[i + 1] || '')) || /^(CR|HWY|HIGHWAY|SH|US)$/.test(w));
+  if (k !== -1) {
+    const n = t.slice(k + 1).find(w => /^\d+$/.test(w));
+    if (n) return { num, street: n };
+  }
   const words = t.filter(w => !STREET_WORDS.has(w));
   if (!words.length) return null;
   const m = words[0].match(ORDINAL);

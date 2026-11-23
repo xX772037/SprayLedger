@@ -1,6 +1,11 @@
-/* Layout: one centred column. A five-step job flow (Field, Weather, Spray, Products, Finish) shows one
+/* Atkinson Hyperlegible (Braille Institute, SIL Open Font License), stored with the app so it works offline. */
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 400; font-style: normal; font-display: swap; src: url("vendor/fonts/atkinson-hyperlegible-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 700; font-style: normal; font-display: swap; src: url("vendor/fonts/atkinson-hyperlegible-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 400; font-style: italic; font-display: swap; src: url("vendor/fonts/atkinson-hyperlegible-latin-400-italic.woff2") format("woff2"); }
+
+/* Layout: one centred column. A six-step job flow (Field, Plan, Spray, Products, Details, Documents) shows one
    step at a time; the map moves into whichever step needs it. Built for older eyes and gloved hands:
-   Atkinson Hyperlegible at 18px and up, text contrast of 7:1 or more, buttons at least 56px tall,
+   Atkinson Hyperlegible: 18px main text, notes about 16–17px; text contrast 7:1 or more; buttons 52px+ (most 56px);
    and a text-size button that scales everything (all sizes are in rem). */
 /* One bright, white look on every device (the app ignores the phone's dark mode on purpose:
    it's used outdoors and by people who asked for white). Tokens are kept for consistency. */
@@ -81,7 +86,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .row-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
 @media (max-width: 560px) {
   .row-actions > .btn { flex: 1 1 100%; }
-  .appbar-actions .btn { min-height: 2.8rem; padding-inline: 0.8rem; }
+  .appbar-actions .btn { min-height: 3.1rem; padding-inline: 0.8rem; }
 }
 
 /* ---------- layout ---------- */
@@ -409,3 +414,5 @@ dialog::backdrop { background: rgba(10, 15, 12, .55); }
 .legend:not(:has(li:not([hidden]))) { display: none; }
 .step-nav.only-back { justify-content: flex-start; }
 .finish-actions:not(:has(> :not([hidden]))) { display: none; }
+.interval.unknown { background: var(--bad-soft); border-color: var(--warn); }
+.interval.unknown .v { font-size: 1.3rem; }

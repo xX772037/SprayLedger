@@ -20,10 +20,14 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
   // Spraying segments, grouped into runs.
   const segs = [];
   let run = 0;
+  const dropped = { gaps: 0, jumps: 0, metres: 0 };
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    const ok = a.spray && b.spray && a.flight === b.flight
-      && (b.t - a.t) <= maxGapS * 1000 && Math.hypot(b.x - a.x, b.y - a.y) <= maxJumpM;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const bothSpraying = a.spray && b.spray && a.flight === b.flight;
+    const ok = bothSpraying && (b.t - a.t) <= maxGapS * 1000 && len <= maxJumpM;
+    // Spraying at both ends but too far apart in time or space to trust: left out, and reported.
+    if (bothSpraying && !ok) { if (len > maxJumpM) dropped.jumps++; else dropped.gaps++; dropped.metres += len; }
     if (ok) {
       const prev = segs[segs.length - 1];
       if (!prev || prev.i !== i - 1) run++;
@@ -203,6 +207,7 @@ export function computeCoverage({ points, boundary = [], swathM, cellM = 1, maxG
       overlapPct: hasBoundary && fieldCells ? (100 * overlap) / fieldCells : null,
       volumeL: hasFlow ? volumeL : null,
       sprayMinutes: sprayMs / 60000,
+      dropped,
     },
   };
 }

@@ -8,7 +8,7 @@ function rng(seed) {
   return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-const ORIGIN = [41.9214, -93.5871]; // a section of farmland in central Iowa
+const ORIGIN = [44.2953, -96.9017]; // farmland in Brookings County, SD (outside the counties with parcel data, so no real owners show)
 const FIELD = [[0, 0], [420, -6], [436, 170], [404, 392], [12, 384], [-14, 196]];
 const POND = Array.from({ length: 10 }, (_, i) => { const a = (i / 10) * Math.PI * 2; return [300 + 34 * Math.cos(a), 250 + 26 * Math.sin(a)]; });
 
@@ -83,10 +83,10 @@ export function sampleJob() {
     boundary,
     record: {
       job: {
-        farm: 'Example: Lindqvist Farms', customerAddress: 'Example address, Olivet SD 57052', field: 'North 40',
-        legal: 'Example: NE¼ 6-98-58', crop: 'Soybeans', pest: 'Frogeye leaf spot',
+        farm: 'Example: Lindqvist Farms', customerAddress: 'Example address, Brookings SD 57006', field: 'North 40',
+        legal: 'Example: NE¼ 6-110-50', crop: 'Soybeans', pest: 'Frogeye leaf spot',
       },
-      applicator: { name: 'Example Applicator', cert: 'AP-00000', company: 'Example Aerial Spraying', phone: '(605) 555-0100', address: 'Example address, Menno SD' },
+      applicator: { name: 'Example Applicator', cert: 'AP-00000', company: 'Example Aerial Spraying', phone: '(605) 555-0100', address: 'Example address, Volga SD' },
       equipment: { model: 'dji-t50', drone: 'DJI Agras T50 (practice)', serial: 'FA-EXAMPLE', swathFt: 23, targetGpa, tankGal: 10.6, flowGpm: 4.2 },
       products: [
         { name: 'Example fungicide (sample)', common: 'example active ingredient', company: 'Example Chemical Co.', epa: '00000-000', ai: '2.09 lb per gal', rate: '8', unit: 'fl oz', rei: '12', phi: '21' },

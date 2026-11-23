@@ -46,12 +46,20 @@ const COLS = {
 
 export function detectColumns(header) {
   const h = header.map(norm);
-  const out = {};
+  const out = {}, used = new Set();
+  // Pass 1: exact header names. Pass 2: prefixes ("spray_..."), never reusing a column another field
+  // already claimed, so a "spray_rate" or "pump_flow" column is the flow rate and not also the on/off switch.
   for (const [key, names] of Object.entries(COLS)) {
     let idx = -1;
-    for (const n of names) { idx = h.indexOf(n); if (idx !== -1) break; }
-    if (idx === -1) idx = h.findIndex(x => names.some(n => x.startsWith(n + '_')));
+    for (const n of names) { idx = h.indexOf(n); if (idx !== -1 && !used.has(idx)) break; idx = -1; }
     out[key] = idx;
+    if (idx !== -1) used.add(idx);
+  }
+  for (const [key, names] of Object.entries(COLS)) {
+    if (out[key] !== -1) continue;
+    const idx = h.findIndex((x, i) => !used.has(i) && names.some(n => x.startsWith(n + '_')));
+    out[key] = idx;
+    if (idx !== -1) used.add(idx);
   }
   return out;
 }
@@ -65,7 +73,11 @@ function flowFactor(headerName) {
 
 const TRUE = new Set(['1', 'true', 'on', 'yes', 'y', 'spraying', 'open']);
 
-/** Returns { ms, relative } or null. Accepts ISO strings, epoch s/ms, or elapsed seconds. */
+/**
+ * Returns { ms, relative, naive } or null. Accepts ISO strings, epoch s/ms, or elapsed seconds.
+ * `naive` means a clock time with no time zone (read as this device's local time; the app lets the
+ * applicator switch it to UTC, since some drone apps write UTC).
+ */
 export function parseTime(v) {
   const s = String(v).trim();
   if (s === '') return null;
@@ -75,8 +87,11 @@ export function parseTime(v) {
     if (n > 1e9) return { ms: n * 1000, relative: false };
     return { ms: n * 1000, relative: true };
   }
-  const ms = Date.parse(s.includes(' ') && !s.includes('T') && /^\d{4}-/.test(s) ? s.replace(' ', 'T') : s);
-  return Number.isNaN(ms) ? null : { ms, relative: false };
+  const iso = s.includes(' ') && !s.includes('T') && /^\d{4}-/.test(s) ? s.replace(' ', 'T') : s;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  const naive = /^\d{4}-\d{2}-\d{2}T\d{1,2}:\d{2}/.test(iso) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  return { ms, relative: false, naive };
 }
 
 export function parseFlightCSV(text) {
@@ -90,13 +105,14 @@ export function parseFlightCSV(text) {
   const warnings = [];
   const ff = c.flow !== -1 ? flowFactor(header[c.flow]) : 1;
   const points = [];
-  let relative = false, skipped = 0;
+  let relative = false, naive = false, skipped = 0;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const lat = parseFloat(r[c.lat]), lon = parseFloat(r[c.lon]);
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) { skipped++; continue; }
     const tm = c.time !== -1 ? parseTime(r[c.time]) : null;
     if (tm?.relative) relative = true;
+    if (tm?.naive) naive = true;
     const flow = c.flow !== -1 ? parseFloat(r[c.flow]) * ff : NaN;
     let spray;
     if (c.spray !== -1) spray = TRUE.has(String(r[c.spray]).trim().toLowerCase());
@@ -117,10 +133,11 @@ export function parseFlightCSV(text) {
   else if (relative) warnings.push('Times are seconds since takeoff, so the date and clock times need to be entered by hand.');
   if (c.flow === -1) warnings.push('No flow-rate column found, so the volume applied cannot be measured from this log. Enter it by hand.');
   if (c.spray === -1 && c.flow === -1) warnings.push('No spray on/off or flow column: every point is treated as not spraying.');
+  else if (!points.some(p => p.spray)) warnings.push(`No spraying found in this log (the "${header[c.spray !== -1 ? c.spray : c.flow]}" column never shows the sprayer on). Check this is the right file.`);
   return {
     points: assignFlights(points),
     warnings,
-    meta: { hasFlow: c.flow !== -1, hasSpray: c.spray !== -1, hasTime: c.time !== -1, relativeTime: relative, columns: c },
+    meta: { hasFlow: c.flow !== -1, hasSpray: c.spray !== -1, hasTime: c.time !== -1, relativeTime: relative, naiveTime: naive, columns: c },
   };
 }
 
@@ -140,6 +157,7 @@ export function assignFlights(points, gapMs = 60000) {
 export function parseGeoJSON(obj) {
   if (typeof obj === 'string') obj = JSON.parse(obj);
   const boundary = [], points = [];
+  let timeless = false, sprayUnknown = false;
   const feats = obj.type === 'FeatureCollection' ? obj.features : obj.type === 'Feature' ? [obj] : [{ type: 'Feature', geometry: obj, properties: {} }];
   const ll = c => [c[1], c[0]];
   for (const f of feats) {
@@ -153,15 +171,18 @@ export function parseGeoJSON(obj) {
       lines.forEach((line, li) => line.forEach((c, i) => {
         const tt = Array.isArray(times?.[0]) ? times[li]?.[i] : times?.[i];
         const tm = tt != null ? parseTime(tt) : null;
+        if (!tm) timeless = true;
+        if (props.spraying == null) sprayUnknown = true;
         points.push({ t: tm ? tm.ms : points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: props.spraying ?? true, flight: String(props.flight ?? li + 1) });
       }));
     } else if (g.type === 'Point') {
       const tm = props.time != null ? parseTime(props.time) : null;
+      if (!tm) timeless = true;
       const flow = parseFloat(props.flow_l_min ?? props.flow ?? NaN);
       points.push({ t: tm ? tm.ms : points.length * 1000, lat: g.coordinates[1], lon: g.coordinates[0], alt: g.coordinates[2] ?? NaN, speed: NaN, flowLpm: flow, spray: props.spraying ?? flow > 0, flight: props.flight != null ? String(props.flight) : null });
     }
   }
-  return { boundary, points: points.length ? assignFlights(points) : points };
+  return { boundary, points: points.length ? assignFlights(points) : points, timeless, sprayUnknown };
 }
 
 // ---------- KML ----------
@@ -180,9 +201,10 @@ export function parseKML(text) {
     const holes = [...block.matchAll(/<(?:\w+:)?innerBoundaryIs>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\/(?:\w+:)?coordinates>/g)];
     boundary.push([kmlCoords(outer[1]).map(ll), ...holes.map(h => kmlCoords(h[1]).map(ll))]);
   }
-  let flight = 0;
+  let flight = 0, timeless = false;
   for (const m of text.matchAll(/<(?:\w+:)?LineString\b[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\/(?:\w+:)?coordinates>/g)) {
     flight++;
+    timeless = true; // a LineString has positions only
     for (const c of kmlCoords(m[1])) points.push({ t: points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) });
   }
   for (const m of text.matchAll(/<gx:Track\b[\s\S]*?<\/gx:Track>/g)) {
@@ -191,20 +213,26 @@ export function parseKML(text) {
     const coords = [...m[0].matchAll(/<gx:coord>([^<]+)<\/gx:coord>/g)].map(x => x[1].trim().split(/\s+/).map(Number));
     coords.forEach((c, i) => points.push({ t: whens[i]?.ms ?? points.length * 1000, lat: c[1], lon: c[0], alt: c[2] ?? NaN, speed: NaN, flowLpm: NaN, spray: true, flight: String(flight) }));
   }
-  return { boundary, points };
+  return { boundary, points, timeless, sprayUnknown: points.length > 0 };
 }
 
 /** Parse any supported file by extension, falling back to sniffing the content. */
 export function parseFile(name, text) {
   const ext = name.toLowerCase().split('.').pop();
   const t = text.trimStart();
+  const trackWarnings = (r, hasFlow) => !r.points.length ? [] : [
+    ...(hasFlow ? [] : ['This file has no flow data, so the gallons sprayed must be entered by hand (step 5, Change acres or gallons).']),
+    ...(r.sprayUnknown ? ['This file does not say when the sprayer was on, so the whole path is treated as spraying. Check the acres.'] : []),
+    ...(r.timeless ? ['This file has no times, so the date and start and finish times must be entered by hand.'] : []),
+  ];
   if (ext === 'kml' || t.startsWith('<?xml') || t.startsWith('<kml')) {
     const r = parseKML(text);
-    return { ...r, warnings: r.points.length ? ['KML tracks carry no flow data, so the volume applied must be entered by hand.'] : [], meta: { hasFlow: false } };
+    return { ...r, warnings: trackWarnings(r, false), meta: { hasFlow: false, timeless: r.timeless } };
   }
   if (ext === 'geojson' || ext === 'json' || t.startsWith('{')) {
     const r = parseGeoJSON(text);
-    return { ...r, warnings: [], meta: { hasFlow: r.points.some(p => Number.isFinite(p.flowLpm)) } };
+    const hasFlow = r.points.some(p => Number.isFinite(p.flowLpm));
+    return { ...r, warnings: trackWarnings(r, hasFlow), meta: { hasFlow, timeless: r.timeless } };
   }
   const r = parseFlightCSV(text);
   return { boundary: [], points: r.points, warnings: r.warnings, meta: r.meta };

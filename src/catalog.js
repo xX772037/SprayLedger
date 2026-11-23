@@ -1,7 +1,7 @@
 // Pick lists: spray drones for planning and common products for the tank mix.
 //
 // Every number here was checked against the maker's announcement or spec page, or the
-// EPA-stamped label, in November 2026. Labels and specs change: the product label in hand is the
+// product label (EPA-stamped where available), in November 2026. Labels and specs change: the product label in hand is the
 // legal authority, and anything left blank (null) here could not be confirmed and is for the
 // applicator to copy from the label. Edit this file to add the drones and products you use.
 
@@ -39,7 +39,7 @@ export const PRODUCTS = [
   // Herbicides
   { group: 'Herbicide', name: 'Roundup PowerMAX 3', common: 'glyphosate (potassium salt)', company: 'Bayer CropScience', epa: '524-659', ai: null, rei: 4 },
   { group: 'Herbicide', name: 'Enlist One', common: '2,4-D choline salt', company: 'Corteva Agriscience', epa: '62719-695', ai: null, rei: 48 },
-  { group: 'Herbicide', name: 'Liberty ULTRA', common: 'glufosinate-P-ammonium', company: 'BASF', epa: '7969-500', ai: '18.7%', rei: null },
+  { group: 'Herbicide', name: 'Liberty ULTRA', common: 'glufosinate-P-ammonium', company: 'BASF', epa: '7969-500', ai: '18.7%', rei: 12 },
   { group: 'Herbicide', name: 'Callisto', common: 'mesotrione', company: 'Syngenta', epa: '100-1131', ai: '4 lb per gal', rei: 12 },
   { group: 'Herbicide', name: 'Dual II Magnum', common: 'S-metolachlor + safener', company: 'Syngenta', epa: '100-818', ai: '7.64 lb per gal', rei: 24 },
   { group: 'Herbicide', name: 'GrazonNext HL', common: 'aminopyralid + 2,4-D', company: 'Corteva Agriscience', epa: '62719-628', ai: null, rei: 48 },
@@ -47,14 +47,15 @@ export const PRODUCTS = [
   // Fungicides
   { group: 'Fungicide', name: 'Headline SC', common: 'pyraclostrobin', company: 'BASF', epa: '7969-289', ai: null, rei: 12 },
   { group: 'Fungicide', name: 'Headline AMP', common: 'pyraclostrobin + metconazole', company: 'BASF', epa: '7969-291', ai: null, rei: 12 },
-  { group: 'Fungicide', name: 'Trivapro', common: 'azoxystrobin + propiconazole + benzovindiflupyr', company: 'Syngenta', epa: '100-1613', ai: null, rei: null },
-  { group: 'Fungicide', name: 'Miravis Neo', common: 'pydiflumetofen + azoxystrobin + propiconazole', company: 'Syngenta', epa: '100-1605', ai: '0.63 + 0.83 + 1.04 lb per gal', rei: null },
+  { group: 'Fungicide', name: 'Trivapro', common: 'azoxystrobin + propiconazole + benzovindiflupyr', company: 'Syngenta', epa: '100-1613', ai: null, rei: 12 },
+  { group: 'Fungicide', name: 'Miravis Neo', common: 'pydiflumetofen + azoxystrobin + propiconazole', company: 'Syngenta', epa: '100-1605', ai: '0.63 + 0.83 + 1.04 lb per gal', rei: 12 },
+  // Delaro Complete's REI was only found in a secondary source, so the applicator enters it from the label.
   { group: 'Fungicide', name: 'Delaro Complete', common: 'prothioconazole + trifloxystrobin + fluopyram', company: 'Bayer CropScience', epa: '264-1207', ai: '1.47 + 1.29 + 1.07 lb per gal', rei: null },
   { group: 'Fungicide', name: 'Veltyma', common: 'mefentrifluconazole + pyraclostrobin', company: 'BASF', epa: '7969-409', ai: '1.67 + 1.67 lb per gal', rei: 12 },
   // Insecticides
   { group: 'Insecticide', name: 'Warrior II with Zeon Technology', common: 'lambda-cyhalothrin', company: 'Syngenta', epa: '100-1295', ai: null, rei: 24, rup: true },
-  { group: 'Insecticide', name: 'Mustang Maxx', common: 'zeta-cypermethrin', company: 'FMC', epa: '279-3426', ai: null, rei: null, rup: true },
-  { group: 'Insecticide', name: 'Hero', common: 'zeta-cypermethrin + bifenthrin', company: 'FMC', epa: '279-3315', ai: '0.309 + 0.927 lb per gal', rei: null, rup: true },
+  { group: 'Insecticide', name: 'Mustang Maxx', common: 'zeta-cypermethrin', company: 'FMC', epa: '279-3426', ai: null, rei: 12, rup: true },
+  { group: 'Insecticide', name: 'Hero', common: 'zeta-cypermethrin + bifenthrin', company: 'FMC', epa: '279-3315', ai: '0.309 + 0.927 lb per gal', rei: 12, rup: true },
   // Adjuvants (not EPA-registered: brand and company are yours to fill in)
   { group: 'Adjuvant', name: 'Non-ionic surfactant (NIS)', common: 'non-ionic surfactant', company: null, epa: null, ai: null, rei: null },
   { group: 'Adjuvant', name: 'Crop oil concentrate (COC)', common: 'crop oil concentrate', company: null, epa: null, ai: null, rei: null },
@@ -71,6 +72,7 @@ export function applyCatalogProduct(product, entry) {
   for (const k of ['common', 'company', 'epa', 'ai']) if (entry[k]) out[k] = entry[k]; else if (!product[k] || product.fromList) out[k] = '';
   out.rei = entry.rei != null ? String(entry.rei) : (product.fromList ? '' : product.rei);
   out.rup = !!entry.rup;
+  out.kind = entry.group === 'Adjuvant' ? 'adjuvant' : 'pesticide';
   out.fromList = true;
   return out;
 }
@@ -105,7 +107,8 @@ export function planJob({ acres, gpa, swathFt, tankGal, flowGpm, maxMph = 15, re
   }
   const acPerHour = swathFt > 0 ? (mph * 1609.344 * swathFt * M_PER_FT) / M2_PER_ACRE * turnFactor : null;
   const sprayHours = acPerHour ? acres / acPerHour : null;
-  const totalHours = sprayHours != null ? sprayHours + ((loads || 1) * refillMin) / 60 : null;
+  // The first tank is filled before starting, so only the loads after it add a refill stop.
+  const totalHours = sprayHours != null ? sprayHours + (Math.max(0, (loads || 1) - 1) * refillMin) / 60 : null;
   return { acres, gpa, gallons, liters: gallons * L_PER_GAL, loads, mph, flowLimited, acPerHour, sprayHours, totalHours };
 }
 

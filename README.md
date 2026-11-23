@@ -6,8 +6,8 @@ Import a flight log and a field boundary, and SprayLedger works out:
 
 - **Coverage.** A map of the field showing sprayed once, overlap, skipped and off-target areas. Coverage %, overlap and off-target acres. A numbered list of unsprayed patches with GPS coordinates to go back and re-spray.
 - **What went on.** Gallons sprayed (integrated from pump flow), the actual gal/ac against target, and the total amount of each product in the tank mix (tank-mix concentration × gallons actually sprayed). Per-flight times and volumes.
-- **When.** Date and start and end times from the log, plus the **re-entry time** (longest REI in the mix) and **earliest harvest date** (longest PHI).
-- **Whether the record is complete.** A checklist of the items the federal restricted-use pesticide recordkeeping rule ([7 CFR Part 110](https://www.ecfr.gov/current/title-7/subtitle-B/chapter-I/subchapter-B/part-110)) asks for, plus common state extras (times, wind, temperature).
+- **When.** Date and start and end times from the log, plus the **re-entry time** (longest REI in the mix) and **earliest harvest date** (longest PHI). If any pesticide's REI hasn't been entered, the re-entry time shows as unknown rather than a too-early time.
+- **Whether the record is complete.** A checklist of the 11 items South Dakota requires on every application record ([ARSD 12:56:07:01](https://sdlegislature.gov/Rules/Administrative/12:56:07:01)), plus the applicator license number from the state form and the re-entry hours of every pesticide. (The federal restricted-use recordkeeping rule, 7 CFR Part 110, was rescinded by USDA effective July 11, 2025, [90 FR 20083](https://www.federalregister.gov/documents/2025/05/12/2025-08220/rescission-of-recordkeeping-on-restricted-use-pesticides-by-certified-applications).)
 
 On top of that:
 
@@ -31,7 +31,7 @@ Specs and label facts live in `src/catalog.js`, each checked against the maker's
 
 ## Built for easy reading
 
-The app walks through a job in six steps (**Field → Plan → Spray → Products → Details → Documents**), one screen at a time, each with a "Step 2 of 6" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Text is at least 18px in Atkinson Hyperlegible, a typeface designed for low vision, with contrast of 7:1 or better. Buttons are at least 56px tall. The **AA** button makes everything bigger, in three sizes.
+The app walks through a job in six steps (**Field → Plan → Spray → Products → Details → Documents**), one screen at a time, each with a "Step 2 of 6" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
 
 ## End-of-job documents (South Dakota)
 
@@ -44,7 +44,21 @@ The record check at the top of the Documents step lists the 11 state items and j
 
 It opens with a simulated sample job: a 40-acre fungicide application with a clogged nozzle and some GPS drift.
 
+## Data, services and offline use
+
+Records stay in the browser on the device (IndexedDB); the app has no server of its own. It contacts these outside services, and only these:
+
+| Service | Used for | Sent |
+| --- | --- | --- |
+| Esri World Imagery, OpenStreetMap | map pictures | map tile positions |
+| Open-Meteo | forecast and past weather | the field's latitude and longitude |
+| Planning & Development District III | county parcel lines, owners, address search | the map area or the address typed |
+
+Fonts, the map library and the PDF maker are stored with the app, so nothing is loaded from Google or a CDN. Once a hosted copy has been opened with signal, the app opens without signal too (`sw.js`); maps, weather and parcels need signal, but entering a job, live tracking and making the PDFs work offline.
+
 ## What still needs real-world work
+
+- **Log time zones.** Drone apps write times differently. When a log's times have no time zone, the Spray step asks whether they are local time or UTC; check a real log from each drone model.
 
 - **Drone live telemetry.** Drones are covered by importing their flight log after each flight. Live drone position needs each manufacturer's cloud or SDK integration (for example a DJI Cloud API partnership, or MAVLink for ArduPilot/PX4-based sprayers).
 - **Boom on/off from the sprayer.** In the cab the operator taps the boom button. Reading boom state automatically needs a connection to the rate controller or ISOBUS.
@@ -66,7 +80,7 @@ No boundary file? Use **Draw boundary** and click the field corners on the map.
 
 ## Run it
 
-It is a static site with no build step and no dependencies.
+It is a static site: no build step and nothing to install. `npm start` runs a small web server written with Node's built-in modules (`scripts/serve.mjs`).
 
 ```sh
 npm start      # serves on http://localhost:8080
@@ -87,7 +101,11 @@ Any other static host works too (Netlify, Cloudflare Pages). Records are stored 
 
 ```
 index.html        app shell
-styles.css        styles (light and dark)
+styles.css        styles (white only)
+sw.js             offline copy of the app's own files (on hosted copies)
+manifest.webmanifest, icon.svg   lets phones add the app to the home screen
+scripts/serve.mjs local web server for `npm start`
+vendor/fonts/     Atkinson Hyperlegible (SIL Open Font License), stored with the app
 src/parse.js      CSV / KML / GeoJSON importers
 src/coverage.js   coverage engine
 src/records.js    product math, REI/PHI, compliance check, CSV export

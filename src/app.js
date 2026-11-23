@@ -2,7 +2,7 @@ import { parseFile } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
 import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
-  emptyRecord, normalizeRecord, blankProduct, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
+  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
 import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
@@ -66,8 +66,12 @@ function analyze() {
     hasBoundary: a.hasBoundary,
     start: a.start, end: a.end,
   };
-  const MISMATCH = 'The field boundary does not overlap';
-  state.notices = state.notices.filter(n => !n.text.startsWith(MISMATCH));
+  const MISMATCH = 'The field boundary does not overlap', DROPPED = 'Some spraying was left out';
+  state.notices = state.notices.filter(n => !n.text.startsWith(MISMATCH) && !n.text.startsWith(DROPPED));
+  const d = s.dropped;
+  if (d && d.gaps + d.jumps > 0) {
+    state.notices.push({ text: `${DROPPED} of the coverage map: the log has ${d.gaps + d.jumps} place${d.gaps + d.jumps > 1 ? 's' : ''} where it skips ahead (${d.jumps ? `${d.jumps} GPS jump${d.jumps > 1 ? 's' : ''}` : ''}${d.jumps && d.gaps ? ', ' : ''}${d.gaps ? `${d.gaps} pause${d.gaps > 1 ? 's' : ''} of over 10 seconds` : ''}, ${fmt(d.metres / M_PER_FT, 0)} ft in all). If the map shows red where you sprayed, that's why.` });
+  }
   if (a.hasBoundary && s.sprayedM2 > 0 && s.coveredM2 === 0) {
     state.notices.push({ text: 'The field boundary does not overlap any of the spraying. Check that the boundary and the flight log are for the same field.', err: true });
   }
@@ -88,13 +92,14 @@ async function importFiles(fileList) {
   if (!files.length) return;
   state.notices = [];
   const tracks = [], boundaries = [], names = [];
-  let relative = false;
+  let relative = false, naive = false;
   for (const f of files) {
     try {
       const r = parseFile(f.name, await f.text());
       if (r.boundary.length) boundaries.push(...r.boundary);
       if (r.points.length) tracks.push({ name: f.name, points: r.points });
-      if (r.meta?.relativeTime) relative = true;
+      if (r.meta?.relativeTime || r.meta?.timeless) relative = true; // clock times can't be taken from this file
+      if (r.meta?.naiveTime) naive = true;
       r.warnings.forEach(w => state.notices.push({ text: `${f.name}: ${w}` }));
       if (!r.boundary.length && !r.points.length) state.notices.push({ text: `${f.name}: no flight track or field boundary found in this file.`, err: true });
       else names.push(f.name);
@@ -107,6 +112,8 @@ async function importFiles(fileList) {
     state.points = tracks.flatMap((t, i) => tracks.length > 1 ? t.points.map(p => ({ ...p, flight: `${i + 1}.${p.flight}` })) : t.points);
     if (!relative) state.points.sort((a, b) => a.t - b.t);
     state.rec.sourceFiles = names;
+    state.rec.logNaive = naive && !relative; // times without a time zone: let the applicator say local or UTC
+    state.rec.logTimes = 'local';
   } else if (names.length) {
     state.rec.sourceFiles = [...new Set([...state.rec.sourceFiles, ...names])];
   }
@@ -456,7 +463,9 @@ async function lookupOwners(force = false) {
   const now = wxNow();
   const dir = now && now.wind >= 1 ? now.dir : null;
   const dist = Number($('nbDist').value);
-  const key = JSON.stringify([state.boundary.length, state.boundary[0][0].length, state.boundary[0][0][0], dir == null ? null : Math.round(dir / 10), dist]);
+  // every corner of the field is in the key, so any change to the field looks up the owners again
+  const shape = state.boundary.flat(2).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(';');
+  const key = JSON.stringify([shape, dir == null ? null : Math.round(dir / 10), dist]);
   if (!force && key === state.owners.key) return;
   state.owners.key = key;
   const zone = neighbourZone(state.boundary, dir, dist);
@@ -523,7 +532,7 @@ async function startLive() {
     source = new DeviceGPS();
   } else if (kind === 'serial') {
     if (!SerialGPS.available()) return liveError('USB GPS receivers work in Chrome or Edge on a computer.');
-    source = new SerialGPS();
+    source = new SerialGPS(Number($('liveBaud').value) || 9600);
   } else {
     if (!state.boundary.length) {
       state.boundary = sampleJob().boundary;
@@ -571,7 +580,8 @@ function onFix(fix) {
   state.notices = state.notices.filter(n => !/^(Waiting|Receiver has no)/.test(n.text));
   fmap?.setLive(fix, L.swathM);
   $('lvSpeed').textContent = Number.isFinite(fix.speedMps) ? `${fmt(fix.speedMps * 2.23694, 1)} mph` : '—';
-  $('lvAcc').textContent = fix.rtk ? `RTK ${fix.rtk}` : `±${fmt(fix.accuracyM / M_PER_FT, 0)} ft`;
+  const weak = L.session.rejected;
+  $('lvAcc').textContent = (fix.rtk ? `RTK ${fix.rtk}` : `±${fmt(fix.accuracyM / M_PER_FT, 0)} ft`) + (weak ? ` · ${weak} weak fix${weak > 1 ? 'es' : ''} skipped` : '');
   if (firstFix) loadWeather();
   const now = performance.now();
   if (now - L.lastCalc < 1500) return;
@@ -621,7 +631,8 @@ async function finishLive() {
 // ---------------------------------------------------------------- panels
 
 function stat(k, v, unit, d, tone) {
-  return `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}><span class="k">${k}</span><span class="v">${v}${unit ? `<small>${unit}</small>` : ''}</span><span class="d">${d}</span></div>`;
+  // every part is escaped: the detail can carry a field name the applicator typed
+  return `<div class="stat"${tone ? ` data-tone="${esc(tone)}"` : ''}><span class="k">${esc(k)}</span><span class="v">${esc(v)}${unit ? `<small>${esc(unit)}</small>` : ''}</span><span class="d">${esc(d)}</span></div>`;
 }
 
 function renderStats() {
@@ -687,6 +698,8 @@ function renderNotices() {
 function fillForm() {
   document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
   $('f_model').value = state.rec.equipment.model || '';
+  $('tzRow').hidden = !state.rec.logNaive;
+  $('logTz').value = state.rec.logTimes || 'local';
   if (!state.live) $('liveBoom').value = state.rec.equipment.swathFt || 90;
   const s = state.rec.summary;
   $('f_acres').placeholder = s ? fmt(s.acresTreated, 2) + ' from GPS' : '';
@@ -787,10 +800,10 @@ function refreshDerived() {
   });
 
   renderPlan();
-  const re = reentryTime(r), hv = harvestDate(r);
+  const re = reentryTime(r), hv = harvestDate(r), noRei = missingRei(r);
   const maxOf = k => Math.max(...r.products.map(p => Number(p[k])).filter(Number.isFinite));
   $('intervals').innerHTML = `
-    <div class="interval${re ? '' : ' na'}"><span class="k">Keep people out until</span><span class="v">${re ? fmtDateTime(re) : 'Enter the re-entry hours and finish time'}</span>${re ? `<span>${maxOf('rei')}-hour re-entry interval</span>` : ''}</div>
+    <div class="interval${re ? '' : noRei.length ? ' unknown' : ' na'}"><span class="k">Keep people out until</span><span class="v">${re ? fmtDateTime(re) : noRei.length ? 'Unknown' : 'Enter the re-entry hours and finish time'}</span>${re ? `<span>${maxOf('rei')}-hour re-entry interval</span>` : noRei.length ? `<span>Enter the re-entry hours from the label for: ${esc(noRei.map(p => p.name).join(', '))}</span>` : ''}</div>
     <div class="interval${hv ? '' : ' na'}"><span class="k">Do not harvest before</span><span class="v">${hv ? fmtDate(hv) : 'Enter the pre-harvest days and date'}</span>${hv ? `<span>${maxOf('phi')}-day pre-harvest interval</span>` : ''}</div>`;
 
   const c = complianceCheck(r);
@@ -1145,11 +1158,26 @@ $('addProduct').addEventListener('click', () => {
 $('btnSave').addEventListener('click', async () => {
   state.practice = false; // saving the practice job on purpose makes it a real job
   syncLog();
-  await saveRecord(state.rec);
-  state.dirty = false;
-  $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`;
-  await refreshList();
+  try {
+    await saveRecord(state.rec);
+    state.dirty = false;
+    $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`;
+    await refreshList();
+  } catch (e) {
+    $('saveState').textContent = /quota/i.test(e?.name || e?.message || '') ? 'Not saved: this device is out of storage space' : 'Not saved: this browser is not keeping data';
+  }
 });
+
+// Times written without a time zone: local time (default) or UTC. Switching moves every point by the UTC offset.
+$('logTz').addEventListener('change', e => {
+  const want = e.target.value, have = state.rec.logTimes || 'local';
+  if (want === have || !state.points.length) return;
+  const sign = want === 'utc' ? -1 : 1;
+  state.points = state.points.map(p => ({ ...p, t: p.t + sign * new Date(p.t).getTimezoneOffset() * 60000 }));
+  state.rec.logTimes = want;
+  syncLog(); analyze(); setTimesFromLog(); markDirty(); renderAll();
+});
+$('liveSource').addEventListener('change', e => { $('baudRow').hidden = e.target.value !== 'serial'; });
 document.querySelectorAll('[data-doc]').forEach(b => {
   if (b.dataset.act === 'send') b.hidden = !shareFiles; // phones: open the text/email share menu
   b.addEventListener('click', () => makeDocument(b.dataset.doc, b.dataset.act, b));
@@ -1285,6 +1313,11 @@ addEventListener('keydown', e => { if (state.live && !state.live.stopped && e.co
 new ResizeObserver(() => fmap?.invalidate()).observe($('map').parentElement);
 
 // ---------------------------------------------------------------- start
+
+// Offline: keep the app's own files on the device once it has been opened online (hosted copies only).
+if ('serviceWorker' in navigator && !embedded && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* works without it, just not offline */ });
+}
 
 (async () => {
   try { applyTextSize(localStorage.getItem('sprayledger.textsize') || ''); } catch { /* private mode */ }

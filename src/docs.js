@@ -3,7 +3,7 @@
 // Uses jsPDF (vendored, window.jspdf).
 
 import {
-  productTotals, reentryTime, harvestDate, acresTreated, volumeGal, complianceCheck,
+  productTotals, reentryTime, harvestDate, acresTreated, volumeGal, complianceCheck, missingRei,
   fmt, fmtDate, fmtDateTime, clock,
 } from './records.js';
 
@@ -144,6 +144,7 @@ export function customerReport(r, ctx = {}) {
   const re = reentryTime(r), hv = harvestDate(r);
   const safety = [];
   if (re) safety.push(['Keep people out until:', fmtDateTime(re)]);
+  else if (missingRei(r).length) safety.push(['Keep people out until:', 'See the product labels (re-entry hours not entered)']);
   if (hv) safety.push(['Do not harvest before:', fmtDate(hv)]);
   if (safety.length) w.box(safety, { color: [176, 48, 47] });
 
