@@ -1,12 +1,14 @@
 // Offline support: keep the app's own files on the device so it opens with no signal in the field.
 // Outside data (map pictures, weather, parcels) always comes from the network and is not stored here.
-const CACHE = 'sprayledger-v1';
+// Every file the app loads must be listed here (test/offline.test.js checks it), or the app won't open offline.
+const CACHE = 'sprayledger-v2';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg',
-  'src/app.js', 'src/catalog.js', 'src/config.js', 'src/coverage.js', 'src/docs.js', 'src/geo.js', 'src/live.js',
+  'src/app.js', 'src/catalog.js', 'src/config.js', 'src/coverage.js', 'src/docs.js', 'src/equipment.js', 'src/geo.js', 'src/live.js',
   'src/map.js', 'src/parcels.js', 'src/parse.js', 'src/records.js', 'src/sample.js', 'src/store.js', 'src/weather.js',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'vendor/jspdf/jspdf.umd.min.js',
   'vendor/leaflet/images/layers.png', 'vendor/leaflet/images/layers-2x.png',
+  'vendor/leaflet/images/marker-icon.png', 'vendor/leaflet/images/marker-icon-2x.png', 'vendor/leaflet/images/marker-shadow.png',
   'vendor/fonts/atkinson-hyperlegible-latin-400-normal.woff2', 'vendor/fonts/atkinson-hyperlegible-latin-700-normal.woff2',
   'vendor/fonts/atkinson-hyperlegible-latin-400-italic.woff2',
 ];

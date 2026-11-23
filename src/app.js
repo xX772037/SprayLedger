@@ -152,7 +152,7 @@ function ensureMap() {
       fmap.setDraft(state.draw.pts);
     },
     onMove: probe,
-    onTileStatus: s => { $('tileNote').hidden = s !== 'blocked'; },
+    onTileStatus: s => showTileNote(s === 'blocked'),
     onMoveEnd: scheduleViewParcels,
     onSearch: findAddress,
   });
@@ -861,8 +861,10 @@ async function refreshList() {
       <span class="j-title">${esc(r.job.field || 'Field not named')}${r.job.farm ? `, ${esc(r.job.farm)}` : ''}</span>
       <span class="j-meta">${r.job.date ? fmtDate(new Date(r.job.date + 'T00:00')) : 'No date'} · ${Number.isFinite(ac) ? `${fmt(ac, 1)} acres` : 'no acres'}${prods.length ? ` · ${esc(prods.join(', '))}` : ''}</span>
       <span class="chip ${c.complete ? 'ok' : 'bad'}">${c.complete ? 'Complete' : `${c.missing.length} missing`}</span>
+      ${r.savedOffline ? '<span class="chip offline">Not synced</span>' : ''}
     </button></li>`;
   }).join('');
+  $('syncNote').hidden = !state.records.some(r => r.savedOffline);
   $('btnDelete').hidden = !state.records.some(r => r.id === state.rec.id);
 }
 
@@ -1044,7 +1046,7 @@ async function makeDocument(kind, act, btn) {
   btn.disabled = true; btn.textContent = 'Making the PDF…';
   try {
     if (!window.jspdf) throw new Error('The PDF maker did not load. Reload the page and try again.');
-    if (!state.practice) { syncLog(); await saveRecord(state.rec); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList(); }
+    if (!state.practice) { syncLog(); await saveRecord(markOffline(state.rec)); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList(); }
     const ctx = {
       map: documentMap(),
       gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
@@ -1120,7 +1122,7 @@ async function autoSave() {
   if (state.practice || !state.dirty || !(state.boundary.length || state.points.length || state.rec.job.field)) return;
   syncLog();
   try {
-    await saveRecord(state.rec);
+    await saveRecord(markOffline(state.rec));
     state.dirty = false;
     $('saveState').textContent = `Saved ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
     refreshList();
@@ -1179,7 +1181,7 @@ $('btnSave').addEventListener('click', async () => {
   state.practice = false; // saving the practice job on purpose makes it a real job
   syncLog();
   try {
-    await saveRecord(state.rec);
+    await saveRecord(markOffline(state.rec));
     state.dirty = false;
     $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`;
     await refreshList();
@@ -1215,6 +1217,28 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// ---------------------------------------------------------------- offline
+// The app's own files come from the service worker (sw.js), so it opens with no signal. Weather and
+// parcel lookups say they can't load; the map keeps drawing and coverage on its plain background.
+// A job saved with no network is marked "Not synced". There is no cloud sync yet, so the mark stays:
+// it never claims the job has left this device.
+function markOffline(rec) { if (!navigator.onLine) rec.savedOffline = true; return rec; }
+function showTileNote(blocked) {
+  $('tileNote').textContent = navigator.onLine
+    ? "The satellite picture can't load here. It shows when the app runs on its own web address."
+    : 'No internet, so the satellite picture can\'t load. You can still draw the field and see the coverage on the plain background.';
+  $('tileNote').hidden = !blocked;
+}
+function updateOnline() {
+  const off = !navigator.onLine;
+  $('offlineBadge').hidden = !off;
+  if (off) showTileNote(true);
+  else { showTileNote(false); fmap?.redrawTiles?.(); }
+}
+addEventListener('online', updateOnline);
+addEventListener('offline', updateOnline);
+updateOnline();
 
 // Drone model for log imports: each maker's profile reads its own column names, units and spray switch.
 // "Other / generic" reads the common column names. Only shown once a maker profile exists to choose from.

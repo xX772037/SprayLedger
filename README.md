@@ -55,7 +55,13 @@ Records stay in the browser on the device (IndexedDB); the app has no server of 
 | Open-Meteo | forecast and past weather | the field's latitude and longitude |
 | Planning & Development District III | county parcel lines, owners, address search | the map area or the address typed |
 
-Fonts, the map library and the PDF maker are stored with the app, so nothing is loaded from Google or a CDN. Once a hosted copy has been opened with signal, the app opens without signal too (`sw.js`); maps, weather and parcels need signal, but entering a job, live tracking and making the PDFs work offline.
+Fonts, the map library and the PDF maker are stored with the app, so nothing is loaded from Google or a CDN. Once a hosted copy has been opened with signal, the app opens without signal too (`sw.js`; `test/offline.test.js` checks every app file is stored). With no signal:
+
+- an **Offline** badge shows in the top bar;
+- the map has no satellite picture and says so, but drawing the field and the coverage map still work on its plain background;
+- weather and parcel lookups say they can't load; enter the weather by hand;
+- entering a job, live tracking and making the PDFs all work;
+- jobs saved while offline are marked **Not synced** in My jobs. There is no cloud backup yet, so every job is kept only on this device and the mark stays; export to a spreadsheet to keep a copy.
 
 ## What still needs real-world work
 
