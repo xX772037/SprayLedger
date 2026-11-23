@@ -1,5 +1,5 @@
 // Land ownership from county parcel layers published by Planning & Development District III
-// (Yankton, SD). Each county's assessment system names its fields differently; the `f` map below
+// (Yankton, SD): 32 counties across central, south-central, northeast and western South Dakota. Each county's assessment system names its fields differently; the `f` map below
 // translates them into one shape. Data is public record from the county Directors of Equalization.
 // The services carry no license text: get District III's written OK before charging for this feature.
 
@@ -8,6 +8,12 @@ import { downwindEdges } from './weather.js';
 
 const BASE = 'https://gis.districtiii.org/server/rest/services';
 const mail = (street, cityLine) => ({ street, cityLine });
+// County assessment systems shared by several counties: Thomson Reuters-style "TC_" fields (legal text in up
+// to 7 parts) and "CAMA_" fields (legal text in up to 3 parts).
+const TC_LEGAL = ['TC_LEGAL1', 'TC_LEGAL2', 'TC_LEGAL3', 'TC_LEGAL4', 'TC_LEGAL5', 'TC_LEGAL6', 'TC_LEGAL7'];
+// Ask only for fields a layer has: one unknown field name makes the server refuse the whole query.
+const CAMA = { site: ['CAMA_SITE_ADDRESS'], owner: ['CAMA_OWNERNAME'], acres: ['CAMA_ACRES'], legal: ['CAMA_LEGAL1', 'CAMA_LEGAL2', 'CAMA_LEGAL3'],
+  ...mail(['CAMA_MAILING_ADDRESS'], ['CAMA_MAILING_CITY', 'CAMA_MAILING_STATE', 'CAMA_MAILING_ZIP']) };
 
 // bbox = [south, west, north, east] in degrees, from each layer's own extent.
 export const PARCEL_SOURCES = [
@@ -27,7 +33,66 @@ export const PARCEL_SOURCES = [
     f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL', 'parcel_id'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
   { county: 'Yankton', url: `${BASE}/YANKTON_PROVAL_LAYERS/MapServer/104`, bbox: [42.7994, -97.6532, 43.1823, -97.1410], paging: false, // joined table: no result paging
     f: { site: ['DATA3.SITE_ADDRESS'], owner: ['DATA3.OWNERNAME1'], parcel: ['PARCEL.PARCEL_ID', 'DATA3.PARCEL_ID'], acres: ['DATA3.DEEDED_ACRES'], legal: ['DATA3.LEGAL1'], ...mail(['DATA3.ADDRESS1', 'DATA3.ADDRESS2'], ['DATA3.ADDRESS3', 'DATA3.ZIP']) } },
+  // ---- Added November 2026: the other counties District III serves (fields mapped from each live layer) ----
+  { county: 'Aurora', url: `${BASE}/AURORA_COUNTY_WEB_LAYERS/MapServer/8`, bbox: [43.4919, -98.8190, 43.9451, -98.3059],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
+  { county: 'Bennett', url: `${BASE}/BENNETT_COUNTY_WEB_LAYERS/MapServer/4`, bbox: [42.9874, -102.1165, 43.4003, -101.2225],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME', 'ADD_OWNER'], parcel: ['PARCEL_LINK', 'PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_ST', 'MAILING_STATE', 'MAILING_ZIP']) } },
+  { county: 'Brule', url: `${BASE}/BRULE_COUNTY_WEB_LAYERS/MapServer/12`, bbox: [43.4936, -99.5034, 43.9422, -98.7835], joinLegal: true,
+    f: { site: ['TC_SITE_ADDRESS'], owner: ['TC_OWNER'], parcel: ['PARCEL_ID', 'PARCEL'], acres: ['TC_ACRES', 'A1_ACRES'], legal: TC_LEGAL, ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
+  { county: 'Buffalo', url: `${BASE}/BUFFALO_COUNTY_WEB_LAYERS/MapServer/20`, bbox: [43.9291, -99.5761, 44.2027, -98.9211],
+    f: { site: ['SITEADDRES'], owner: ['OWNERNAME', 'ADDOWNER'], parcel: ['PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['OWNERSTREE'], ['OWNERCITY', 'OWNERST', 'OWNERZIP']) } },
+  { county: 'Butte', url: `${BASE}/BUTTE_COUNTY_WEB_LAYERS2/MapServer/3`, bbox: [44.5705, -104.1013, 45.2461, -102.9266], joinLegal: true,
+    f: { site: ['TC_SITE_ADDRESS'], owner: ['TC_OWNER'], parcel: ['PARCEL', 'parcel_id'], acres: ['TC_ACRES', 'A1_ACRES'], legal: TC_LEGAL, ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
+  { county: 'Campbell', url: `${BASE}/CAMPBELL_COUNTY_WEB_LAYERS/MapServer/22`, bbox: [45.5923, -100.5119, 45.9447, -99.7157],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME', 'ADD_OWNER'], parcel: ['PARCEL_ID', 'PARCEL_LINK'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_STATE', 'MAILING_ZIP']) } },
+  { county: 'Day', url: `${BASE}/DAY_COUNTY_WEB_LAYERS/MapServer/7`, bbox: [45.1375, -97.9949, 45.5999, -97.2052], joinLegal: true,
+    f: { site: ['TC_SITE_ADDRESS', 'SITEADDRESS'], owner: ['TC_OWNER', 'OWNERNAME'], parcel: ['PARCEL_ID', 'PARCEL'], acres: ['TC_ACRES', 'A1_ACRES', 'DEEDEDACRES'], legal: TC_LEGAL, ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
+  { county: 'Faulk', url: `${BASE}/FAULK_COUNTY_WEB_LAYERS/MapServer/3`, bbox: [44.8911, -99.5759, 45.2501, -98.7087],
+    f: { site: ['SITE_ADDRESS'], owner: ['DEED_HOLDER', 'TAX_OWNER_NAME_1'], parcel: ['PARCEL_ID', 'PARCEL_NUMBER_PIN'], acres: ['DEEDED_ACRES', 'TOTAL_ACRES'], legal: ['LEGAL'], ...mail(['MAIL_TO_ADDRESS_1', 'MAIL_TO_ADDRESS_2'], ['MAIL_TO_CITY', 'MAIL_TO_STATE', 'MAIL_TO_ZIP']) } },
+  { county: 'Gregory', url: `${BASE}/GREGORY_COUNTY_WEB_LAYERS/MapServer/5`, bbox: [42.9861, -99.5404, 43.5019, -98.4950], joinLegal: true,
+    f: { ...CAMA, parcel: ['PIDLINK', 'PID'], acres: ['CAMA_ACRES', 'acres'] } },
+  { county: 'Haakon', url: `${BASE}/HAAKON_COUNTY_WEB_LAYERS/MapServer/15`, bbox: [43.9851, -102.0289, 44.7510, -101.0453],
+    f: { site: ['SITE_ADDRESS'], owner: ['DEEDHOLDER'], parcel: ['PARCEL_NUMBER', 'PARCELID'], acres: ['DEEDED_ACRES', 'acres'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS_LINE1'], ['CITY_ADD', 'STATE_ADD', 'ZIP_ADD']) } },
+  { county: 'Hughes', url: `${BASE}/HUGHES_COUNTY_WEB_LAYERS/MapServer/2`, bbox: [44.0968, -100.5818, 44.5489, -99.5959], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'] } },
+  { county: 'Jackson', url: `${BASE}/JACKSON_COUNTY_WEB_LAYERS2/MapServer/42`, bbox: [43.3784, -102.1543, 44.0047, -101.0569],
+    f: { site: ['SITE_ADDRESS'], owner: ['DEEDHOLDER'], parcel: ['PARCEL_NUMBER', 'PARCEL_ID'], acres: ['DEEDED_ACRES', 'acres'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS_LINE1'], ['CITY_ADD', 'STATE_ADD', 'ZIP_ADD']) } },
+  { county: 'Jerauld', url: `${BASE}/JERAULD_COUNTY_WEB_LAYERS/MapServer/9`, bbox: [43.9263, -98.9323, 44.2055, -98.3229], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'] } },
+  // Jones publishes no mailing address.
+  { county: 'Jones', url: `${BASE}/JONES_COUNTY_WEB_LAYERS/MapServer/8`, bbox: [43.7040, -101.0679, 44.1705, -100.3389],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL_ID', 'PID_LINK'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail([], []) } },
+  { county: 'Lyman', url: `${BASE}/LYMAN_COUNTY_WEB_LAYERS/MapServer/0`, bbox: [43.4970, -100.3673, 44.2258, -99.2526], joinLegal: true,
+    f: { ...CAMA, parcel: ['PIDLINK'], acres: ['CAMA_ACRES', 'acres'] } },
+  // Marshall writes the state into the city field ("WEST FARGO ND").
+  { county: 'Marshall', url: `${BASE}/MARSHALL_COUNTY_WEB_LAYERS/MapServer/3`, bbox: [45.5556, -97.9917, 45.9507, -97.2086],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL_ID', 'Parcel_ID_1'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_ZIP']) } },
+  { county: 'McPherson', url: `${BASE}/MCPHERSON_COUNTY_WEB_LAYERS/MapServer/2`, bbox: [45.5867, -99.7198, 45.9454, -98.7175],
+    f: { site: ['SITE_ADDRESS'], owner: ['OWNERNAME'], parcel: ['PARCEL_NUMBER', 'PARCEL_ID'], acres: ['DEEDED_ACRE'], legal: ['LEGAL'], ...mail(['MAILING_ADDRESS'], ['MAILING_CITY', 'MAILING_ST', 'MAILING_ZIP']) } },
+  { county: 'Mellette', url: `${BASE}/MELLETTE_COUNTY_WEB_LAYERS/MapServer/5`, bbox: [43.3865, -101.2352, 43.8625, -100.2132], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'] } },
+  { county: 'Potter', url: `${BASE}/POTTER_COUNTY_WEB_LAYERS/MapServer/2`, bbox: [44.8968, -100.4263, 45.2475, -99.5702], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'] } },
+  { county: 'Sanborn', url: `${BASE}/SANBORN_COUNTY_WEB_LAYERS/MapServer/13`, bbox: [43.8416, -98.3434, 44.2046, -97.8368], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'] } },
+  { county: 'Stanley', url: `${BASE}/STANLEY_COUNTY_WEB_LAYERS/MapServer/2`, bbox: [44.1632, -101.1794, 44.7877, -99.8912], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID', 'PARCELID'] } },
+  { county: 'Sully', url: `${BASE}/SULLY_COUNTY_WEB_LAYERS/MapServer/2`, bbox: [44.5460, -100.7133, 44.8988, -99.6739], joinLegal: true,
+    f: { ...CAMA, parcel: ['PARCEL_ID'], acres: ['CAMA_ACRES', 'ACRES'] } },
+  // One layer for both counties; the parcel number tells them apart.
+  { county: 'Tripp and Todd', url: `${BASE}/TRIPP_TODD_WEB_LAYERS/MapServer/6`, bbox: [42.9949, -101.2395, 43.7769, -99.5239], joinLegal: true,
+    f: { site: ['TC_SITE_ADDRESS'], owner: ['TC_OWNER'], parcel: ['TRIPP_TODD_PARCEL_ID', 'PARCEL'], acres: ['TC_ACRES', 'A1_ACRES'], legal: TC_LEGAL, ...mail(['TC_ADDRESS'], ['TC_CITY_ST', 'TC_ZIP']) } },
+  { county: 'Ziebach', url: `${BASE}/ZIEBACH_COUNTY_WEB_LAYERS/MapServer/3`, bbox: [44.5172, -102.0351, 45.4841, -101.1279],
+    f: { site: ['VALUES_SITUSADDRESS'], owner: ['DEED_HOLDER', 'TAX_OWNER_NAME_1'], parcel: ['PARCEL_ID', 'PARCEL_NUMBER_PIN'], acres: ['DEEDED_ACRES', 'TOTAL_ACRES'], legal: ['LEGAL'], ...mail(['MAIL_TO_ADDRESS_1', 'MAIL_TO_ADDRESS_2'], ['MAIL_TO_CITY', 'MAIL_TO_STATE', 'MAIL_TO_ZIP']) } },
 ];
+
+/** "Day County", or "Tripp and Todd counties" for the one layer that covers two. */
+export const countyLabel = name => (name.includes(' and ') ? `${name} counties` : `${name} County`);
+/** How many counties have parcel data (the Tripp and Todd layer counts as two). */
+export const COUNTY_COUNT = PARCEL_SOURCES.reduce((n, s) => n + s.county.split(' and ').length, 0);
+/** Every covered county by name, alphabetically. */
+export const COUNTY_NAMES = PARCEL_SOURCES.flatMap(s => s.county.split(' and ')).sort((a, b) => a.localeCompare(b));
 
 export const PARCEL_ATTRIBUTION = 'Parcels &copy; county Directors of Equalization, via Planning &amp; Development District III';
 export const NOT_COVERED_NEARBY = ['McCook County (its parcel map is on Schneider Beacon, not District III)'];
@@ -54,7 +119,8 @@ export function normalizeFeature(feature, src) {
     owner: first(src.f.owner),
     parcel,
     acres: Number.isFinite(acres) && acres > 0 ? acres : null,
-    legal: first(src.f.legal),
+    // Some counties split the legal text over several fields: join them in order.
+    legal: src.joinLegal ? joined(src.f.legal) : first(src.f.legal),
     site: first(src.f.site || []),
     mailing: [street, cityLine].filter(Boolean).join(', '),
     polygons: polys.map(poly => poly.map(ring => ring.map(([lon, lat]) => [lat, lon]))),

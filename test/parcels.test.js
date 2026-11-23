@@ -126,3 +126,46 @@ test('county legal text becomes a section-township-range description', () => {
   assert.equal(legalDescription({ legal: 'W1/2 NE1/4\r\n28.99.60' }), 'W1/2 NE1/4 28-99-60');
   assert.equal(legalDescription({ legal: '' }), '');
 });
+
+// ---- the 33 District III counties ----
+import { COUNTY_COUNT, COUNTY_NAMES, countyLabel } from '../src/parcels.js';
+
+test('33 counties from 32 layers: names and layers unique, each box inside South Dakota, owner/parcel/legal mapped', () => {
+  assert.equal(PARCEL_SOURCES.length, 32);
+  assert.equal(COUNTY_COUNT, 33);
+  assert.equal(new Set(COUNTY_NAMES).size, 33);
+  assert.equal(new Set(PARCEL_SOURCES.map(s => s.url)).size, 32);
+  for (const s of PARCEL_SOURCES) {
+    const [south, west, north, east] = s.bbox;
+    assert.ok(south < north && west < east, `${s.county}: box corners in order`);
+    // a layer's own box can overhang the state line a little (Butte's reaches -104.10, the line is at -104.06)
+    assert.ok(south >= 42.4 && north <= 46.0 && west >= -104.2 && east <= -96.4, `${s.county}: box inside South Dakota`);
+    for (const k of ['owner', 'parcel', 'legal']) assert.ok(s.f[k]?.length, `${s.county}: ${k} field mapped`);
+    assert.match(s.url, /^https:\/\/gis\.districtiii\.org\/server\/rest\/services\/[A-Z_0-9]+\/MapServer\/\d+$/, s.county);
+  }
+  assert.equal(countyLabel('Day'), 'Day County');
+  assert.equal(countyLabel('Tripp and Todd'), 'Tripp and Todd counties');
+});
+
+test('counties on the shared CAMA system ask only for fields their layers have', () => {
+  // One unknown field name makes the server refuse the whole query (Hughes, Mellette, Potter, Sanborn and
+  // Stanley have no lower-case "acres" field; Gregory and Lyman do).
+  for (const name of ['Hughes', 'Jerauld', 'Mellette', 'Potter', 'Sanborn', 'Stanley', 'Sully']) assert.ok(!src(name).f.acres.includes('acres'), name);
+  for (const name of ['Gregory', 'Lyman']) assert.ok(src(name).f.acres.includes('acres'), name);
+});
+
+test('a legal description split over several fields is joined in order; a single-field one is kept as is', () => {
+  const geom = { type: 'Polygon', coordinates: [[[-99, 43.7], [-98.99, 43.7], [-98.99, 43.71], [-99, 43.7]]] };
+  const brule = normalizeFeature({ type: 'Feature', geometry: geom, properties: {
+    PARCEL_ID: '30-180-10-0012', TC_OWNER: 'SAMPLE OWNER', TC_LEGAL1: 'LOT H-1 OF IRR', TC_LEGAL2: '  ', TC_LEGAL3: 'TRACT A', TC_LEGAL6: '10-103-68', TC_ADDRESS: 'PO BOX 1', TC_CITY_ST: 'KIMBALL SD', TC_ZIP: '57355', TC_ACRES: 5.4 } }, src('Brule'));
+  assert.equal(brule.legal, 'LOT H-1 OF IRR TRACT A 10-103-68');
+  assert.equal(brule.mailing, 'PO BOX 1, KIMBALL SD 57355');
+  assert.equal(brule.owner, 'SAMPLE OWNER');
+  const faulk = normalizeFeature({ type: 'Feature', geometry: geom, properties: {
+    PARCEL_ID: 70, DEED_HOLDER: 'SAMPLE TRUST', LEGAL: 'NE 1/4 OF 18-117-66', DEEDED_ACRES: 160, MAIL_TO_ADDRESS_1: '1 MAIN ST', MAIL_TO_CITY: 'REDFIELD', MAIL_TO_STATE: 'SD', MAIL_TO_ZIP: '57469' } }, src('Faulk'));
+  assert.equal(faulk.legal, 'NE 1/4 OF 18-117-66');
+  assert.equal(faulk.mailing, '1 MAIN ST, REDFIELD SD 57469');
+  assert.equal(faulk.acres, 160);
+  const jones = normalizeFeature({ type: 'Feature', geometry: geom, properties: { PARCEL_ID: 1528, OWNERNAME: 'SAMPLE LAND CO', LEGAL: '6-1N-26E' } }, src('Jones'));
+  assert.equal(jones.mailing, '', 'Jones publishes no mailing address');
+});

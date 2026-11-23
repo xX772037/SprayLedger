@@ -14,7 +14,7 @@ import { FieldMap } from './map.js';
 import { fetchForecast, fetchConditionsAt, assessHour, sprayWindows, downwindEdges, compass16 } from './weather.js';
 import { DeviceGPS, SerialGPS, SimulatedRig, LiveSession } from './live.js';
 import { SPRAY_LIMITS } from './config.js';
-import { PARCEL_SOURCES, PARCEL_ATTRIBUTION, NOT_COVERED_NEARBY, queryParcels, sourcesFor, neighbourZone, classifyParcels, downwindEdgesLL, searchAddress, parcelCenter, legalDescription } from './parcels.js';
+import { PARCEL_SOURCES, PARCEL_ATTRIBUTION, NOT_COVERED_NEARBY, COUNTY_COUNT, COUNTY_NAMES, countyLabel, queryParcels, sourcesFor, neighbourZone, classifyParcels, downwindEdgesLL, searchAddress, parcelCenter, legalDescription } from './parcels.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -363,7 +363,9 @@ function renderDownwind() {
 
 // ---------------------------------------------------------------- parcels and owners
 
-const COVERED = PARCEL_SOURCES.map(s => s.county).join(', ');
+// 33 county names in one sentence is unreadable: say how many, with the names one tap away.
+const COVERED = `${COUNTY_COUNT} South Dakota counties`;
+const coveredList = () => `<details class="fold small"><summary>Which counties?</summary><p class="sub">${esc(COUNTY_NAMES.join(', '))}.</p></details>`;
 const feetOrMiles = m => (m / M_PER_FT < 1000 ? `${fmt(m / M_PER_FT, 0)} ft` : `${fmt(m / 1609.344, 2)} mi`);
 const distLabel = () => $('nbDist').selectedOptions[0].textContent;
 let parcelTimer;
@@ -405,12 +407,12 @@ async function findAddress(text) {
   let r;
   try { r = await searchAddress(text); }
   catch { r = { query: null, exact: [], near: [], failed: true }; }
-  const pickBtn = (p, i) => `<button type="button" class="pick" data-i="${i}"><b>${esc(p.site)}</b><span>${esc(p.county)} County · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 1)} acres` : ''}</span></button>`;
+  const pickBtn = (p, i) => `<button type="button" class="pick" data-i="${i}"><b>${esc(p.site)}</b><span>${esc(countyLabel(p.county))} · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 1)} acres` : ''}</span></button>`;
   const list = r.exact.length ? r.exact : r.near;
   const close = '<button type="button" class="btn" data-close>Close</button>';
   if (!r.query) box.innerHTML = `<p>Type a house number and road, like <b>41255 277th St</b>, or a latitude and longitude.</p>${close}`;
   else if (!list.length) {
-    box.innerHTML = `<p>${r.failed || embedded ? 'County records couldn\'t be reached from here.' : `No address on that road in the county records for ${COVERED} counties.`}</p>${close}`;
+    box.innerHTML = `<p>${r.failed || embedded ? 'County records couldn\'t be reached from here.' : `No address on that road in the county records for ${COVERED}.`}</p>${r.failed || embedded ? '' : coveredList()}${close}`;
   } else {
     box.innerHTML = `<p>${r.exact.length ? (list.length > 1 ? 'Pick one:' : 'Found:') : `No exact match for <b>${esc(text)}</b>. Closest on that road:`}</p>${list.map(pickBtn).join('')}${close}`;
   }
@@ -430,7 +432,7 @@ function showParcel(p, ll) {
   el.className = 'parcel-pop';
   el.innerHTML = `<b>${esc(p.owner || 'Owner not listed')}</b>
     ${p.site ? `<span>${esc(p.site)}</span>` : ''}
-    <span>${esc(p.county)} County · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 2)} ac` : ''}</span>
+    <span>${esc(countyLabel(p.county))} · parcel ${esc(p.parcel || '—')}${p.acres ? ` · ${fmt(p.acres, 2)} ac` : ''}</span>
     ${p.legal ? `<span class="muted">${esc(p.legal)}</span>` : ''}
     ${p.mailing ? `<span class="muted">${esc(p.mailing)}</span>` : ''}
     <div class="row"><button type="button" class="primary" data-a="use">Use as field boundary</button>${state.boundary.length ? '<button type="button" data-a="add">Add to field</button>' : ''}</div>`;
@@ -456,7 +458,7 @@ function useParcel(p, add) {
     j.parcels = p.parcel; j.landowner = p.owner; j.legal = legalDescription(p);
   }
   state.notices = state.notices.filter(n => !/boundary/i.test(n.text));
-  state.notices.push({ text: `Field boundary ${add ? 'extended with' : 'set from'} ${p.county} County parcel ${p.parcel || ''}. County parcel lines follow legal descriptions, so trim it with Redraw boundary if the sprayed area is smaller (waterways, farmstead, road ditches).` });
+  state.notices.push({ text: `Field boundary ${add ? 'extended with' : 'set from'} ${countyLabel(p.county)} parcel ${p.parcel || ''}. County parcel lines follow legal descriptions, so trim it with Redraw boundary if the sprayed area is smaller (waterways, farmstead, road ditches).` });
   state.fitPending = !add;
   state.owners.key = null;
   syncLog(); analyze(); markDirty(); renderAll();
@@ -466,7 +468,7 @@ async function lookupOwners(force = false) {
   const el = $('owners');
   if (!state.boundary.length) {
     state.owners = { key: null };
-    el.innerHTML = `<p class="sub">Set a field boundary to see who owns the field and the land around it. Tap any parcel on the map to see its owner. County records cover ${COVERED} counties.</p>`;
+    el.innerHTML = `<p class="sub">Set a field boundary to see who owns the field and the land around it. Tap any parcel on the map to see its owner. County records cover ${COVERED}.</p>${coveredList()}`;
     fmap?.setOwnerHighlights();
     return;
   }
