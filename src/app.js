@@ -324,10 +324,17 @@ function renderWeather() {
     <p class="wx-note">Good means wind ${SPRAY_LIMITS.windMinMph}–${SPRAY_LIMITS.windMaxMph} mph, gusts under ${SPRAY_LIMITS.gustMaxMph} mph, no inversion, no rain coming and air not too dry. Forecast wind is at 33 ft. The product label is the law: if it says less wind, go by the label.</p>`;
 }
 
+function renderLegend(hasDownwind) {
+  const a = state.analysis;
+  const show = { cov: !!a, skip: !!a?.hasBoundary, ovl: !!a, off: !!a?.hasBoundary, dw: hasDownwind, nb: !!state.owners?.neighbours?.length };
+  document.querySelectorAll('.legend [data-key]').forEach(li => { li.hidden = !show[li.dataset.key]; });
+}
+
 function renderDownwind() {
   if (!fmap) return;
   const a = state.analysis, now = wxNow();
-  if (!now || now.wind < 1 || !state.boundary.length) { fmap.setDownwind([]); return; }
+  if (!now || now.wind < 1 || !state.boundary.length) { fmap.setDownwind([]); renderLegend(false); return; }
+  renderLegend(true);
   const label = `Downwind edge: drift goes ${compass16((now.dir + 180) % 360)} today`;
   if (a?.hasBoundary) {
     const { edges } = downwindEdges(a.polys, now.dir);
@@ -791,7 +798,8 @@ function refreshDerived() {
   chip.className = 'chip ' + (c.complete ? 'ok' : 'bad');
   chip.textContent = c.complete ? 'Complete' : `${c.missing.length} missing`;
   $('checklist').innerHTML = c.items.map(i => `<li class="${i.ok ? '' : 'miss'}">${i.ok ? esc(i.label) : `<button type="button" data-goto="${i.step}">${esc(i.label)}</button>`}</li>`).join('');
-  $('docWarn').textContent = c.complete ? '' : `The record check shows ${c.missing.length} item${c.missing.length > 1 ? 's' : ''} missing. You can still make the documents; the state record lists what's missing.`;
+  $('docWarn').hidden = c.complete;
+  $('docWarn').textContent = c.complete ? '' : `${c.missing.length} item${c.missing.length > 1 ? 's are' : ' is'} missing from the record (in red above; tap one to fill it in). You can still download the PDFs; the state record lists what's missing.`;
 
   $('jobTitle').textContent = r.job.field ? `${r.job.field}${r.job.date ? ', ' + fmtDate(new Date(r.job.date + 'T00:00')) : ''}` : 'New job';
   const done = {
@@ -799,7 +807,8 @@ function refreshDerived() {
     weather: !!(r.conditions.wind && r.conditions.windDir && r.conditions.temp),
     spray: state.points.length > 1 || Number.isFinite(Number(r.job.acresOverride || NaN)),
     products: r.products.some(p => p.name) && r.products.filter(p => p.name).every(p => p.rate),
-    finish: c.complete,
+    finish: !!(r.job.farm && r.job.date && r.applicator.name && r.conditions.wind),
+    docs: c.complete,
   };
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('data-done', !!done[b.dataset.step]));
   renderStats();
@@ -841,6 +850,7 @@ function cancelLive() {
 
 function loadRecord(rec) {
   cancelLive();
+  state.practice = false;
   state.owners.key = null;
   state.fitPending = true;
   state.rec = normalizeRecord(structuredClone(rec));
@@ -856,6 +866,7 @@ function loadRecord(rec) {
 
 function newRecord(seed) {
   cancelLive();
+  state.practice = false;
   state.owners.key = null;
   state.fitPending = true;
   const r = emptyRecord();
@@ -873,6 +884,7 @@ function newRecord(seed) {
 
 function loadSample() {
   cancelLive();
+  state.practice = true;
   state.owners.key = null;
   state.fitPending = true;
   setTab('log');
@@ -888,11 +900,11 @@ function loadSample() {
   state.rec = r;
   state.points = parseFile(j.fileName, j.csv).points;
   state.boundary = j.boundary;
-  state.notices = [{ text: 'This is the practice job: a made-up 40-acre spraying with a clogged nozzle on one pass. All names and numbers are examples. Tap New job to start a real one.' }];
+  state.notices = [{ text: 'Practice job: made-up names and numbers. Tap New job to start a real one.' }];
   syncLog();
   analyze();
   setTimesFromLog();
-  state.dirty = true; $('saveState').textContent = 'Practice job, not saved';
+  state.dirty = true; $('saveState').textContent = 'Practice job (not saved)';
   renderAll();
 }
 
@@ -1002,8 +1014,7 @@ async function makeDocument(kind, act, btn) {
   btn.disabled = true; btn.textContent = 'Making the PDF…';
   try {
     if (!window.jspdf) throw new Error('The PDF maker did not load. Reload the page and try again.');
-    syncLog();
-    await saveRecord(state.rec); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList();
+    if (!state.practice) { syncLog(); await saveRecord(state.rec); state.dirty = false; $('saveState').textContent = `Saved ${fmtDateTime(new Date())}`; refreshList(); }
     const ctx = {
       map: documentMap(),
       gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
@@ -1015,9 +1026,11 @@ async function makeDocument(kind, act, btn) {
     const how = act === 'send' && shareFiles
       ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'} on ${fmtDate(new Date(r.job.date + 'T00:00'))}.` : '' })
       : await deliverPdf(doc, name, { title, noShare: true });
-    out.textContent = how === 'shared' ? 'Sent.' : how === 'cancelled' ? 'Not sent.' : `Saved as ${name}.`;
+    out.className = 'doc-state ok';
+    out.textContent = how === 'shared' ? 'Sent.' : how === 'cancelled' ? 'Not sent.' : `Downloaded: ${name}`;
   } catch (e) {
-    out.textContent = e.code === 'declined' ? 'Not saved.' : (e.message || 'The PDF could not be made.');
+    out.className = 'doc-state';
+    out.textContent = e.code === 'declined' ? 'Not downloaded.' : (e.message || 'The PDF could not be made.');
   } finally {
     btn.disabled = false; btn.textContent = old;
   }
@@ -1030,8 +1043,16 @@ const shareFiles = (() => {
 
 // ---------------------------------------------------------------- steps, views and text size
 
-const STEPS = ['field', 'weather', 'spray', 'products', 'finish'];
-const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Finish' };
+const STEPS = ['field', 'weather', 'spray', 'products', 'finish', 'docs'];
+const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Details', docs: 'Documents' };
+const STEP_INFO = {
+  field: ['Choose the field', 'Type the field\'s address in the box on the map, then tap the field to use it. Or draw its corners.'],
+  weather: ['Plan the job', 'Pick the drone or sprayer, then check whether the weather is right for spraying.'],
+  spray: ['Spray the field', 'Load the drone\'s flight log after flying, or track a ground sprayer live.'],
+  products: ['What went in the tank', 'Pick each product from the list, then type the rate from its label.'],
+  finish: ['Job details', 'Customer, date and time, weather and applicator. These go on both documents.'],
+  docs: ['Documents', 'Check the record is complete, then download the two PDFs.'],
+};
 
 function showView(name) {
   $('viewJobs').hidden = name !== 'jobs';
@@ -1050,11 +1071,28 @@ function setStep(name) {
   if (slot) { slot.appendChild(card); card.hidden = false; requestAnimationFrame(() => { fmap?.invalidate(); if (state.fitPending) renderMap(); }); }
   else card.hidden = true;
   const i = STEPS.indexOf(name);
+  $('stepCount').textContent = `Step ${i + 1} of ${STEPS.length}`;
+  $('stepTitle').textContent = STEP_INFO[name][0];
+  $('stepHint').textContent = STEP_INFO[name][1];
+  autoSave();
   $('stepPrev').hidden = i === 0;
   $('stepPrev').textContent = i > 0 ? `Back: ${STEP_NAMES[STEPS[i - 1]]}` : 'Back';
   $('stepNext').hidden = i === STEPS.length - 1;
   $('stepNext').textContent = i < STEPS.length - 1 ? `Next: ${STEP_NAMES[STEPS[i + 1]]}` : '';
+  $('stepNext').closest('.step-nav').classList.toggle('only-back', i === STEPS.length - 1);
   if (name === 'weather') loadWeather();
+}
+
+// Jobs save themselves when you move between steps (the practice job never does).
+async function autoSave() {
+  if (state.practice || !state.dirty || !(state.boundary.length || state.points.length || state.rec.job.field)) return;
+  syncLog();
+  try {
+    await saveRecord(state.rec);
+    state.dirty = false;
+    $('saveState').textContent = `Saved ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    refreshList();
+  } catch { $('saveState').textContent = 'Not saved: this browser is not keeping data'; }
 }
 
 const SIZES = ['', 'l', 'xl'];
@@ -1105,6 +1143,7 @@ $('addProduct').addEventListener('click', () => {
   $(`p${state.rec.products.length - 1}_name`).focus();
 });
 $('btnSave').addEventListener('click', async () => {
+  state.practice = false; // saving the practice job on purpose makes it a real job
   syncLog();
   await saveRecord(state.rec);
   state.dirty = false;
@@ -1112,11 +1151,9 @@ $('btnSave').addEventListener('click', async () => {
   await refreshList();
 });
 document.querySelectorAll('[data-doc]').forEach(b => {
-  if (b.dataset.act === 'send' && !shareFiles) b.textContent = b.dataset.doc === 'customer' ? 'Save to send to customer' : 'Save to file';
+  if (b.dataset.act === 'send') b.hidden = !shareFiles; // phones: open the text/email share menu
   b.addEventListener('click', () => makeDocument(b.dataset.doc, b.dataset.act, b));
 });
-// Without a share menu both buttons would do the same thing, so show one.
-if (!shareFiles) document.querySelectorAll('[data-doc][data-act="save"]').forEach(b => { b.hidden = true; });
 $('checklist').addEventListener('click', e => { const b = e.target.closest('[data-goto]'); if (b) setStep(b.dataset.goto); });
 document.querySelectorAll('.steps [data-step]').forEach(b => b.addEventListener('click', () => setStep(b.dataset.step)));
 $('stepPrev').addEventListener('click', () => { setStep(STEPS[Math.max(0, STEPS.indexOf(state.step) - 1)]); scrollTo({ top: 0 }); });
@@ -1161,7 +1198,7 @@ addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag');
 
 $('btnNew').addEventListener('click', e => {
   const go = () => { newRecord(state.rec); state.step = 'field'; showView('job'); };
-  if (state.dirty && state.rec.summary && !/Practice/.test($('saveState').textContent)) confirmClick(e.currentTarget, 'Discard unsaved job?', go);
+  if (state.dirty && !state.practice && (state.rec.summary || state.boundary.length)) { autoSave().then(go); return; }
   else go();
 });
 $('btnSample').addEventListener('click', e => {
@@ -1172,7 +1209,7 @@ $('btnSample').addEventListener('click', e => {
 $('recList').addEventListener('click', e => {
   const b = e.target.closest('[data-id]'); if (!b) return;
   const rec = state.records.find(r => r.id === b.dataset.id);
-  if (rec) { loadRecord(rec); state.step = 'finish'; showView('job'); }
+  if (rec) { loadRecord(rec); state.step = 'docs'; showView('job'); }
 });
 $('gaps').addEventListener('click', e => {
   const b = e.target.closest('[data-copy]'); if (!b) return;

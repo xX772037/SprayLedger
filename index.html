@@ -55,14 +55,20 @@
       <button type="button" role="tab" data-step="weather"><span class="n">2</span><span class="t">Plan</span></button>
       <button type="button" role="tab" data-step="spray"><span class="n">3</span><span class="t">Spray</span></button>
       <button type="button" role="tab" data-step="products"><span class="n">4</span><span class="t">Products</span></button>
-      <button type="button" role="tab" data-step="finish"><span class="n">5</span><span class="t">Finish</span></button>
+      <button type="button" role="tab" data-step="finish"><span class="n">5</span><span class="t">Details</span></button>
+      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t">Documents</span></button>
     </nav>
+
+    <header class="step-head">
+      <p class="step-count" id="stepCount">Step 1 of 6</p>
+      <h2 id="stepTitle">Choose the field</h2>
+      <p class="lead" id="stepHint"></p>
+    </header>
 
     <ul class="notices" id="notices" aria-live="polite"></ul>
 
     <!-- STEP 1: FIELD -->
     <section class="step" data-panel="field" role="tabpanel" aria-label="Field">
-      <p class="lead">Type the field's address in the box on the map, then <b>tap the parcel</b> to use it as the field. You can also draw the field's corners, or load a boundary file.</p>
       <div class="row-actions">
         <button type="button" class="btn btn-big" id="btnDraw">Draw the field</button>
         <button type="button" class="btn btn-big" id="btnLoadBoundary">Load a boundary file</button>
@@ -193,20 +199,13 @@
 
     <!-- STEP 4: PRODUCTS -->
     <section class="step" data-panel="products" role="tabpanel" aria-label="Products" hidden>
-      <p class="lead">Enter each product in the tank, straight from its label.</p>
       <p class="note" id="gpaNote"></p>
       <div id="products"></div>
       <button type="button" class="btn btn-big" id="addProduct">Add another product</button>
     </section>
 
     <!-- STEP 5: FINISH -->
-    <section class="step" data-panel="finish" role="tabpanel" aria-label="Finish" hidden>
-      <section class="check-card" aria-labelledby="checkTitle">
-        <div class="check-head"><h2 id="checkTitle">Record check</h2><span class="chip" id="complianceChip"></span></div>
-        <ul id="checklist" class="checklist"></ul>
-        <p class="sub">These are the 11 items South Dakota requires on every application record (ARSD 12:56:07:01), plus your license number from the state form.</p>
-      </section>
-
+    <section class="step" data-panel="finish" role="tabpanel" aria-label="Details" hidden>
       <fieldset>
         <legend>Customer and field</legend>
         <div class="grid2">
@@ -275,37 +274,50 @@
         </details>
       </fieldset>
 
+      <div class="row-actions finish-actions">
+        <button type="button" class="btn btn-primary btn-big" id="btnSave">Save job</button>
+      </div>
+    </section>
+
+    <!-- STEP 6: DOCUMENTS -->
+    <section class="step" data-panel="docs" role="tabpanel" aria-label="Documents" hidden>
+      <section class="check-card" aria-labelledby="checkTitle">
+        <div class="check-head"><h3 id="checkTitle">Is the record complete?</h3><span class="chip" id="complianceChip"></span></div>
+        <ul id="checklist" class="checklist"></ul>
+        <p class="sub">These are the 11 items South Dakota requires on every application record (ARSD 12:56:07:01), plus your license number from the state form.</p>
+      </section>
+
       <section class="intervals" id="intervals" aria-label="Re-entry and harvest dates"></section>
 
-      <section class="docs" aria-labelledby="docsTitle">
-        <h2 id="docsTitle">Documents</h2>
-        <p class="sub" id="docWarn"></p>
-        <div class="doc-card">
-          <div>
+      <section class="docs" aria-label="PDF documents">
+        <p class="note" id="docWarn" hidden></p>
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
             <h3>Customer report</h3>
-            <p>What was sprayed, when to stay out of the field, the earliest harvest date, and the coverage map. South Dakota requires it when a customer asks in writing.</p>
+            <p>For the farmer: what was sprayed, when people can go back in, the earliest harvest date, and the coverage map. 2 pages.</p>
           </div>
-          <div class="row-actions">
-            <button type="button" class="btn btn-primary btn-big" data-doc="customer" data-act="send">Send to customer</button>
-            <button type="button" class="btn btn-big" data-doc="customer" data-act="save">Save PDF</button>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" data-doc="customer" data-act="save">Download PDF</button>
+            <button type="button" class="btn btn-big" data-doc="customer" data-act="send" hidden>Text or email it</button>
           </div>
-        </div>
-        <div class="doc-card">
-          <div>
-            <h3>State application record</h3>
-            <p>The South Dakota record, numbered like the state's form. Keep it for <b>3 years</b>. It isn't mailed in after each job: give a copy to the state (SD DANR) when they ask.</p>
+        </article>
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
+            <h3>South Dakota application record</h3>
+            <p>For your files, numbered like the state's form. Keep it for <b>3 years</b> and give a copy to the state (SD DANR) if they ask. It isn't mailed in after each job. 2 pages.</p>
           </div>
-          <div class="row-actions">
-            <button type="button" class="btn btn-primary btn-big" data-doc="state" data-act="send">Send or file</button>
-            <button type="button" class="btn btn-big" data-doc="state" data-act="save">Save PDF</button>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" data-doc="state" data-act="save">Download PDF</button>
+            <button type="button" class="btn btn-big" data-doc="state" data-act="send" hidden>Text or email it</button>
           </div>
-        </div>
-        <p class="sub" id="docState" aria-live="polite"></p>
+        </article>
+        <p class="doc-state" id="docState" aria-live="polite"></p>
       </section>
 
       <div class="row-actions finish-actions">
-        <button type="button" class="btn btn-primary btn-big" id="btnSave">Save job</button>
-        <button type="button" class="btn btn-big btn-danger" id="btnDelete" hidden>Delete job</button>
+        <button type="button" class="btn btn-danger" id="btnDelete" hidden>Delete this job</button>
       </div>
     </section>
 
@@ -332,12 +344,12 @@
   </div>
   <div class="map-foot">
     <ul class="legend">
-      <li><i class="sw sw-cov"></i>Sprayed</li>
-      <li><i class="sw sw-skip"></i>Not sprayed</li>
-      <li><i class="sw sw-ovl"></i>Sprayed twice</li>
-      <li><i class="sw sw-off"></i>Outside field</li>
-      <li><i class="sw sw-dw"></i>Downwind edge</li>
-      <li><i class="sw sw-nb"></i>Downwind neighbour</li>
+      <li data-key="cov"><i class="sw sw-cov"></i>Sprayed</li>
+      <li data-key="skip"><i class="sw sw-skip"></i>Not sprayed</li>
+      <li data-key="ovl"><i class="sw sw-ovl"></i>Sprayed twice</li>
+      <li data-key="off"><i class="sw sw-off"></i>Outside field</li>
+      <li data-key="dw"><i class="sw sw-dw"></i>Downwind edge</li>
+      <li data-key="nb"><i class="sw sw-nb"></i>Downwind neighbour</li>
     </ul>
     <div class="map-toggles">
       <label class="check"><input type="checkbox" id="showParcels" checked> Show parcels</label>

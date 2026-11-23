@@ -57,7 +57,7 @@ export class FieldMap {
     const Go = Lf.Control.extend({
       onAdd: () => {
         const f = Lf.DomUtil.create('form', 'leaflet-bar goto-ctl');
-        f.innerHTML = '<input id="gotoInput" type="search" enterkeyhint="search" placeholder="Address, or lat, lon" aria-label="Find an address or latitude, longitude"><button type="submit" aria-label="Find">Find</button><button type="button" data-me aria-label="Go to my location" title="Go to my location">◎</button>';
+        f.innerHTML = '<input id="gotoInput" type="search" enterkeyhint="search" placeholder="Find an address" aria-label="Find an address or latitude, longitude"><button type="submit" aria-label="Find">Find</button><button type="button" data-me aria-label="Go to my location" title="Go to my location">◎</button>';
         Lf.DomEvent.disableClickPropagation(f); Lf.DomEvent.disableScrollPropagation(f);
         const input = f.querySelector('input');
         f.addEventListener('submit', e => {

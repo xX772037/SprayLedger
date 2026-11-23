@@ -31,16 +31,16 @@ Specs and label facts live in `src/catalog.js`, each checked against the maker's
 
 ## Built for easy reading
 
-The app walks through a job in five steps (**Field → Weather → Spray → Products → Finish**), one screen at a time. Text is at least 18px in Atkinson Hyperlegible, a typeface designed for low vision, with contrast of 7:1 or better. Buttons are at least 56px tall. The **AA** button makes everything bigger, in three sizes.
+The app walks through a job in six steps (**Field → Plan → Spray → Products → Details → Documents**), one screen at a time, each with a "Step 2 of 6" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Text is at least 18px in Atkinson Hyperlegible, a typeface designed for low vision, with contrast of 7:1 or better. Buttons are at least 56px tall. The **AA** button makes everything bigger, in three sizes.
 
 ## End-of-job documents (South Dakota)
 
-On the Finish step, two PDFs. On phones, **Send** opens the share menu so the PDF can go by text or email:
+On the last step, **Documents**, two PDFs with a **Download PDF** button each. On phones, **Send** opens the share menu so the PDF can go by text or email:
 
 - **Customer report:** what was sprayed, the re-entry time and earliest harvest date in a box at the top, rates and totals, weather, the coverage map, and the applicator's contact details. ARSD 12:56:07:04 requires a commercial applicator to give the customer a record on written request.
 - **State application record:** laid out and numbered like the S.D. DANR recordkeeping form, covering the 11 items of ARSD 12:56:07:01. Product totals are in gallons or pounds as the form asks, plus the license number, supporting GPS data and a signature line. Records must be complete by the end of the application day and **kept for 3 years**. They are not filed after each job: the department gets a copy on request (ARSD 12:56:07:02–:03).
 
-The **Record check** on the Finish step lists the 11 state items and jumps to whatever is missing. Jobs can also be exported to a spreadsheet (CSV, one row per product).
+The record check at the top of the Documents step lists the 11 state items and jumps to whatever is missing. Jobs can also be exported to a spreadsheet (CSV, one row per product).
 
 It opens with a simulated sample job: a 40-acre fungicide application with a clogged nozzle and some GPS drift.
 
