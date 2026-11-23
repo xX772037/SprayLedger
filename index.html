@@ -138,7 +138,8 @@
       <button type="button" role="tab" data-step="spray"><span class="n">3</span><span class="t">Spray</span></button>
       <button type="button" role="tab" data-step="products"><span class="n">4</span><span class="t">Products</span></button>
       <button type="button" role="tab" data-step="finish"><span class="n">5</span><span class="t">Details</span></button>
-      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t">Documents</span></button>
+      <button type="button" role="tab" data-step="docs"><span class="n">6</span><span class="t" data-short="Docs">Documents</span></button>
+      <button type="button" role="tab" data-step="invoice"><span class="n">7</span><span class="t">Invoice</span></button>
     </nav>
 
     <header class="step-head">
@@ -422,6 +423,34 @@
       <div class="row-actions finish-actions">
         <button type="button" class="btn btn-danger" id="btnDelete" hidden>Delete this job</button>
       </div>
+    </section>
+
+    <section class="step" data-panel="invoice" role="tabpanel" aria-label="Invoice" hidden>
+      <section class="inv-card" aria-labelledby="invTitle">
+        <h3 id="invTitle">Bill to</h3>
+        <dl class="inv-head" id="invHead"></dl>
+        <label class="inv-rate" for="f_invRate">Your rate per acre
+          <span class="money-in"><span aria-hidden="true">$</span><input id="f_invRate" data-path="invoice.ratePerAcre" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></span>
+        </label>
+        <h3>Products you're charging for</h3>
+        <p class="sub">Type what you charge the customer for each product. Leave it at $0 if they supplied it.</p>
+        <div id="invProducts" class="inv-products"></div>
+        <dl class="inv-sum" id="invSum" aria-live="polite"></dl>
+      </section>
+      <section class="docs" aria-label="Invoice PDF">
+        <article class="doc-card">
+          <div class="doc-icon" aria-hidden="true">PDF</div>
+          <div class="doc-text">
+            <h3>Invoice</h3>
+            <p>For the customer: the acres sprayed, your rate, the products and the total due.</p>
+          </div>
+          <div class="doc-actions">
+            <button type="button" class="btn btn-primary btn-big" id="invSave">Download PDF</button>
+            <button type="button" class="btn btn-big" id="invSend" hidden>Text or email it</button>
+          </div>
+        </article>
+        <p class="doc-state" id="invState" aria-live="polite"></p>
+      </section>
     </section>
 
     <nav class="step-nav" aria-label="Step navigation">

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // The other browser tests block the service worker; this one needs it.
 test.use({ serviceWorkers: 'allow' });
 
-test('after one visit, the app opens with no network and shows all six steps', async ({ page, context }) => {
+test('after one visit, the app opens with no network and shows all the steps', async ({ page, context }) => {
   await page.goto('/');
   // Wait until the service worker has stored the app and controls the page.
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
@@ -16,8 +16,9 @@ test('after one visit, the app opens with no network and shows all six steps', a
   await expect(page.locator('#viewHome')).toBeVisible();
   await page.getByRole('button', { name: 'Try the practice job' }).click();
   const tabs = page.locator('.steps [data-step]');
-  await expect(tabs).toHaveCount(6);
-  for (const name of ['Field', 'Plan', 'Spray', 'Products', 'Details', 'Documents']) await expect(tabs.filter({ hasText: name })).toHaveCount(1);
+  // the six record steps, plus the Invoice step after them
+  await expect(tabs).toHaveCount(7);
+  for (const name of ['Field', 'Plan', 'Spray', 'Products', 'Details', 'Documents', 'Invoice']) await expect(tabs.filter({ hasText: name })).toHaveCount(1);
   // The map still works on its plain background, and says why there is no picture.
   await page.locator('.steps [data-step="field"]').click();
   await expect(page.locator('#tileNote')).toContainText('No internet');

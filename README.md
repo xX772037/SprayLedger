@@ -32,7 +32,19 @@ Specs and label facts live in `src/catalog.js`, each checked against the maker's
 
 ## Built for easy reading
 
-The app walks through a job in six steps (**Field → Plan → Spray → Products → Details → Documents**), one screen at a time, each with a "Step 2 of 6" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
+The app walks through a job in seven steps (**Field → Plan → Spray → Products → Details → Documents → Invoice**), one screen at a time, each with a "Step 2 of 7" heading and one line saying what to do. It is always white, whatever the phone's dark-mode setting. Jobs save themselves when you move between steps; the practice job never does. Main text is 18px in Atkinson Hyperlegible, a typeface designed for low vision; smaller notes are about 16–17px. Text contrast is 7:1 or better. Buttons and input boxes are 52px tall or more (most are 56px). The **AA** button makes everything bigger, in three sizes.
+
+## Invoicing
+
+Step 7, **Invoice**, comes after Documents and opens from any job, including finished ones in My jobs.
+
+- It shows the customer, field, date and acres sprayed (from the coverage map, or the acres typed in on step 5).
+- Type **your rate per acre** and, for each product, **what you charge for it**. Both start at $0; leave a product at $0 if the customer supplied it.
+- The total adds itself up: **acres × rate per acre + product charges**. Acres are billed to 2 decimals, as printed, so the customer can check the math. Blank or negative amounts count as $0.
+- **Download PDF** makes an invoice in the same style as the customer report (on phones, **Text or email it** opens the share menu).
+- The rate and total are saved with the job and added to the spreadsheet export as `invoice_rate_per_acre` and `invoice_total`.
+
+There are no taxes, discounts or invoice numbers yet; add them on the PDF by hand if you need them.
 
 ## End-of-job documents (South Dakota)
 

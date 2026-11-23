@@ -13,7 +13,7 @@ export const UNITS = ['fl oz', 'pt', 'qt', 'gal', 'oz', 'lb', 'mL', 'L', 'g', 'k
 const LIQUID_TO_GAL = { 'fl oz': 1 / 128, pt: 1 / 8, qt: 1 / 4, gal: 1, mL: 1 / 3785.411784, L: 1 / 3.785411784 };
 const DRY_TO_LB = { oz: 1 / 16, lb: 1, g: 1 / 453.59237, kg: 2.20462262 };
 
-export const blankProduct = () => ({ name: '', common: '', company: '', epa: '', ai: '', rate: '', unit: 'fl oz', rei: '', phi: '', rup: false, kind: '' });
+export const blankProduct = () => ({ name: '', common: '', company: '', epa: '', ai: '', rate: '', unit: 'fl oz', rei: '', phi: '', rup: false, kind: '', invoiceCost: '' });
 
 /** Adjuvants (surfactants, oils, AMS…) go in the tank but aren't pesticides, so the pesticide label items don't apply. */
 export function isAdjuvant(p) {
@@ -37,6 +37,8 @@ export function emptyRecord() {
     conditions: { wind: '', windDir: '', temp: '', humidity: '', source: '' },
     notes: '',
     volumeGalOverride: '',
+    // ratePerAcre is typed in; total is kept up to date by the app (and recomputed for the spreadsheet).
+    invoice: { ratePerAcre: '', total: 0 },
     sourceFiles: [],
     log: null,       // { points: compact columns, boundary }
     summary: null,   // filled from the coverage analysis
@@ -50,6 +52,7 @@ export function normalizeRecord(rec) {
   rec.products = (rec.products?.length ? rec.products : base.products).map(p => ({ ...blankProduct(), ...p }));
   for (const k of ['notes', 'volumeGalOverride']) rec[k] ??= base[k];
   rec.sourceFiles ??= [];
+  rec.invoice = { ...base.invoice, ...(rec.invoice || {}) };
   return rec;
 }
 
@@ -181,6 +184,29 @@ export function clock(hm) {
 
 // ---------- CSV export: one row per product per application ----------
 
+// ---------- invoice ----------
+
+const money = v => { const n = num(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+const cents = v => Math.round(v * 100) / 100;
+
+/**
+ * The invoice for a job: acres sprayed x rate per acre, plus what the applicator charges for each product.
+ * Blank, negative or non-numeric amounts count as $0. Unknown acres count as 0 (acresKnown says so).
+ * Billed acres are rounded to 2 decimals, as printed, so the customer can check acres × rate themselves.
+ */
+export function invoiceTotals(rec) {
+  const measured = acresTreated(rec);
+  const acresKnown = Number.isFinite(measured);
+  const acres = acresKnown ? cents(measured) : NaN;
+  const rate = money(rec.invoice?.ratePerAcre);
+  const application = cents((acresKnown ? acres : 0) * rate);
+  const lines = rec.products.filter(p => String(p.name || '').trim()).map(p => ({ product: p, used: productTotals(p, rec), cost: cents(money(p.invoiceCost)) }));
+  const productCost = cents(lines.reduce((s, l) => s + l.cost, 0));
+  return { acres, acresKnown, rate, application, lines, productCost, total: cents(application + productCost) };
+}
+
+export const fmtMoney = v => '$' + (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const CSV_COLUMNS = [
   'Date', 'Start', 'Finish', 'Customer', 'Customer address', 'Field', 'Legal description', 'Parcel no(s).', 'Land owner',
   'Latitude', 'Longitude', 'Crop / site', 'Pest(s)',
@@ -190,6 +216,7 @@ const CSV_COLUMNS = [
   'Spray volume (gal)', 'Spray volume (gal/ac)', 'REI (h)', 'Re-entry allowed', 'PHI (days)', 'Harvest not before',
   'Applicator', 'Applicator license (AP) no.', 'Company', 'Drone or sprayer', 'Serial / registration', 'Swath (ft)',
   'Wind (mph)', 'Wind from', 'Temp (°F)', 'Humidity (%)', 'Weather source', 'Notes',
+  'invoice_rate_per_acre', 'invoice_total',
 ];
 
 const esc = v => {
@@ -204,6 +231,7 @@ export function recordsToCSV(records) {
     const s = r.summary || {};
     const ac = acresTreated(r), gal = volumeGal(r);
     const re = reentryTime(r), hv = harvestDate(r);
+    const inv = invoiceTotals(r);
     const prods = r.products.filter(p => p.name).length ? r.products.filter(p => p.name) : [blankProduct()];
     for (const p of prods) {
       const t = productTotals(p, r);
@@ -217,6 +245,7 @@ export function recordsToCSV(records) {
         fmtN(gal, 2), fmtN(gal / ac, 2), p.rei, re ? `${isoDate(re)} ${hhmm(re)}` : '', p.phi, hv ? isoDate(hv) : '',
         r.applicator.name, r.applicator.cert, r.applicator.company, r.equipment.drone, r.equipment.serial, r.equipment.swathFt,
         r.conditions.wind, r.conditions.windDir, r.conditions.temp, r.conditions.humidity, r.conditions.source, r.notes,
+        inv.rate.toFixed(2), inv.total.toFixed(2),
       ].map(esc).join(','));
     }
   }

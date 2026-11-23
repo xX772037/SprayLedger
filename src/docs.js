@@ -4,7 +4,7 @@
 
 import { isGround } from './equipment.js';
 import {
-  productTotals, reentryTime, harvestDate, acresTreated, volumeGal, complianceCheck, missingRei,
+  productTotals, reentryTime, harvestDate, acresTreated, volumeGal, complianceCheck, missingRei, invoiceTotals, fmtMoney,
   fmt, fmtDate, fmtDateTime, clock,
 } from './records.js';
 
@@ -192,6 +192,39 @@ export function customerReport(r, ctx = {}) {
   w.y += 6;
   w.text('Please keep this report with your farm records. Call us with any questions about this application.', { size: 11, color: MUTED });
   w.footer(`Spray application report · ${r.job.field || ''} · ${r.job.date || ''}`);
+  return w.doc;
+}
+
+/** The invoice for the customer, in the same style as the customer report. */
+export function invoicePdf(r) {
+  const w = new Writer(`Invoice ${r.job.date || ''} ${r.job.field || ''}`);
+  const inv = invoiceTotals(r);
+  businessHeader(w, r);
+  w.y += 6;
+  w.text('Invoice', { size: 24, style: 'bold', color: ACCENT, gap: 2 });
+  w.text(join(r.job.field && `Field: ${r.job.field}`, appDate(r)), { size: 14, gap: 10 });
+
+  w.heading('Bill to');
+  w.fields([['Customer', r.job.farm], ['Address', r.job.customerAddress], ['Field', r.job.field], ['Date sprayed', appDate(r)]]);
+
+  w.heading('Charges');
+  const rows = [[
+    'Application',
+    inv.acresKnown ? `${fmt(inv.acres, 2)} acres sprayed` : 'Acres not entered',
+    `${fmtMoney(inv.rate)} per acre`,
+    fmtMoney(inv.application),
+  ]];
+  for (const l of inv.lines) {
+    rows.push([l.product.name, l.used ? `${fmt(l.used.total, 1)} ${l.used.unit} used` : '—', '', fmtMoney(l.cost)]);
+  }
+  w.table([{ label: 'Item', w: 0.34 }, { label: 'Amount', w: 0.28 }, { label: 'Rate', w: 0.2 }, { label: 'Charge', w: 0.18 }], rows, { size: 11.5 });
+  w.box([['Application:', fmtMoney(inv.application)], ['Products:', fmtMoney(inv.productCost)], ['Total due:', fmtMoney(inv.total)]]);
+
+  w.heading('From');
+  w.fields([['Company', r.applicator.company], ['Applicator', r.applicator.name], ['Phone', r.applicator.phone], ['Address', r.applicator.address]]);
+  w.y += 6;
+  w.text('Thank you for your business. The spray application report for this job has the products, safety dates and coverage map.', { size: 11, color: MUTED });
+  w.footer(`Invoice · ${r.job.field || ''} · ${r.job.date || ''}`);
   return w.doc;
 }
 

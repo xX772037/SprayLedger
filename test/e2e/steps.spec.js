@@ -8,9 +8,10 @@ const STEPS = [
   { key: 'products', tab: 'Products', title: 'What went in the tank' },
   { key: 'finish', tab: 'Details', title: 'Job details' },
   { key: 'docs', tab: 'Documents', title: 'Documents' },
+  { key: 'invoice', tab: 'Invoice', title: 'Invoice' },
 ];
 
-test('the sample job walks through all six steps and ends with both PDF downloads', async ({ page }) => {
+test('the sample job walks through all seven steps and ends with both PDF downloads', async ({ page }) => {
   await blockOutsideServices(page);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -25,13 +26,14 @@ test('the sample job walks through all six steps and ends with both PDF download
 
   for (const [i, s] of STEPS.entries()) {
     await page.locator('.steps').getByRole('tab', { name: new RegExp(s.tab) }).click();
-    await expect(page.locator('#stepCount')).toHaveText(`Step ${i + 1} of 6`);
+    await expect(page.locator('#stepCount')).toHaveText(`Step ${i + 1} of ${STEPS.length}`);
     await expect(page.locator('#stepTitle')).toHaveText(s.title);
     await expect(page.locator(`[data-panel="${s.key}"]`)).toBeVisible();
     for (const other of STEPS.filter(o => o.key !== s.key)) await expect(page.locator(`[data-panel="${other.key}"]`)).toBeHidden();
   }
 
   // Documents: both PDFs have a visible Download button, and each one produces a real PDF.
+  await page.locator('.steps').getByRole('tab', { name: /Documents/ }).click();
   const downloads = page.locator('[data-doc][data-act="save"]');
   await expect(downloads).toHaveCount(2);
   for (const kind of ['customer', 'state']) {

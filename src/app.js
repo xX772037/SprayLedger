@@ -2,10 +2,10 @@ import { parseFile, LOG_PROFILES } from './parse.js';
 import { computeCoverage, acres } from './coverage.js';
 import { M_PER_FT, L_PER_GAL, makeProjection, boundaryArea, M2_PER_ACRE } from './geo.js';
 import {
-  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV,
+  emptyRecord, normalizeRecord, blankProduct, missingRei, UNITS, productTotals, reentryTime, harvestDate, complianceCheck, recordsToCSV, invoiceTotals, fmtMoney,
   fmt, isoDate, hhmm, fmtDateTime, fmtDate, acresTreated, volumeGal,
 } from './records.js';
-import { customerReport, stateRecord, deliverPdf, fileName } from './docs.js';
+import { customerReport, stateRecord, invoicePdf, deliverPdf, fileName } from './docs.js';
 import { DRONES, PRODUCTS, PRODUCT_GROUPS, droneById, droneName, planJob, applyCatalogProduct, productsFromJobs, litersToGal, lpmToGpm } from './catalog.js';
 import { listRecords, saveRecord, deleteRecord, packPoints, unpackPoints, persistent, listEquipment, saveEquipment, deleteEquipment } from './store.js';
 import { applyProfile, applyCatalogEquipment, profileFromEquipment, isGround, sortProfiles } from './equipment.js';
@@ -706,6 +706,7 @@ function renderNotices() {
 function fillForm() {
   document.querySelectorAll('[data-path]').forEach(el => { el.value = getPath(state.rec, el.dataset.path) ?? ''; });
   renderModelOptions();
+  renderInvoice();
   $('tzRow').hidden = !state.rec.logNaive;
   $('logTz').value = state.rec.logTimes || 'local';
   if (!state.live) $('liveBoom').value = state.rec.equipment.swathFt || 90;
@@ -767,6 +768,7 @@ function renderProducts() {
       <div class="calc"><span>Total used: <b data-calc="total">—</b></span><span>Actual rate: <b data-calc="rate">—</b></span></div>
     </section>`).join('');
   refreshDerived();
+  renderInvoice();
 }
 
 function fieldAcres() {
@@ -837,7 +839,9 @@ function refreshDerived() {
     products: r.products.some(p => p.name) && r.products.filter(p => p.name).every(p => p.rate),
     finish: !!(r.job.farm && r.job.date && r.applicator.name && r.conditions.wind),
     docs: c.complete,
+    invoice: invoiceTotals(r).total > 0,
   };
+  updateInvoiceSums();
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('data-done', !!done[b.dataset.step]));
   renderStats();
 }
@@ -938,6 +942,38 @@ function loadSample() {
   setTimesFromLog();
   state.dirty = true; $('saveState').textContent = 'Practice job (not saved)';
   renderAll();
+}
+
+// ---------------------------------------------------------------- invoice
+
+/** The product rows with their cost boxes. Rebuilt when the products change, not on every keystroke. */
+function renderInvoice() {
+  const r = state.rec;
+  const rows = r.products.map((p, i) => ({ p, i })).filter(({ p }) => String(p.name || '').trim());
+  $('invProducts').innerHTML = rows.length ? rows.map(({ p, i }) => {
+    const t = productTotals(p, r);
+    return `<div class="inv-line"><div><b>${esc(p.name)}</b><p class="sub">${t ? `${esc(fmt(t.total, 1))} ${esc(t.unit)} used` : 'Amount used not worked out yet'}</p></div>
+      <label class="money-in" aria-label="Charge for ${esc(p.name)}"><span aria-hidden="true">$</span><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" data-invcost="${i}" value="${esc(p.invoiceCost)}"></label></div>`;
+  }).join('') : '<p class="sub">No products on this job yet (step 4).</p>';
+  updateInvoiceSums();
+}
+
+/** The header and the sums. Runs on every change; also keeps the saved total up to date. */
+function updateInvoiceSums() {
+  const r = state.rec;
+  r.invoice ??= { ratePerAcre: '', total: 0 };
+  const inv = invoiceTotals(r);
+  r.invoice.total = inv.total;
+  const dl = pairs => pairs.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || '—')}</dd></div>`).join('');
+  $('invHead').innerHTML = dl([
+    ['Customer', r.job.farm], ['Field', r.job.field],
+    ['Date', r.job.date ? fmtDate(new Date(r.job.date + 'T00:00')) : ''],
+    ['Acres sprayed', inv.acresKnown ? `${fmt(inv.acres, 2)} acres` : 'Not known yet (step 3 or 5)'],
+  ]);
+  $('invSum').innerHTML = `
+    <dt>Application: ${inv.acresKnown ? `${esc(fmt(inv.acres, 2))} acres` : '0 acres'} × ${esc(fmtMoney(inv.rate))}</dt><dd id="invApp">${esc(fmtMoney(inv.application))}</dd>
+    <dt>Products</dt><dd id="invProd">${esc(fmtMoney(inv.productCost))}</dd>
+    <dt class="total">Total due</dt><dd class="total" id="invTotal">${esc(fmtMoney(inv.total))}</dd>`;
 }
 
 function renderAll() {
@@ -1041,7 +1077,7 @@ function documentMap() {
 }
 
 async function makeDocument(kind, act, btn) {
-  const out = $('docState');
+  const out = kind === 'invoice' ? $('invState') : $('docState');
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = 'Making the PDF…';
   try {
@@ -1052,11 +1088,12 @@ async function makeDocument(kind, act, btn) {
       gaps: state.analysis?.hasBoundary ? bigGaps(state.analysis).map(g => ({ acres: acres(g.areaM2), lat: g.lat, lon: g.lon })) : [],
     };
     const r = state.rec;
-    const doc = kind === 'customer' ? customerReport(r, ctx) : stateRecord(r, ctx);
-    const name = fileName(kind === 'customer' ? 'customer-report' : 'SD-application-record', r);
-    const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
+    const doc = kind === 'customer' ? customerReport(r, ctx) : kind === 'invoice' ? invoicePdf(r) : stateRecord(r, ctx);
+    const name = fileName({ customer: 'customer-report', invoice: 'invoice' }[kind] || 'SD-application-record', r);
+    const title = kind === 'customer' ? `Spray report: ${r.job.field || 'your field'}` : kind === 'invoice' ? `Invoice: ${r.job.field || 'your field'}` : `Pesticide application record ${r.job.date}`;
+    const on = r.job.date ? ` on ${fmtDate(new Date(r.job.date + 'T00:00'))}` : '';
     const how = act === 'send' && shareFiles
-      ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'} on ${fmtDate(new Date(r.job.date + 'T00:00'))}.` : '' })
+      ? await deliverPdf(doc, name, { title, text: kind === 'customer' ? `Spray application report for ${r.job.field || 'your field'}${on}.` : kind === 'invoice' ? `Invoice for spraying ${r.job.field || 'your field'}${on}.` : '' })
       : await deliverPdf(doc, name, { title, noShare: true });
     out.className = 'doc-state ok';
     out.textContent = how === 'shared' ? 'Sent.' : how === 'cancelled' ? 'Not sent.' : `Downloaded: ${name}`;
@@ -1075,8 +1112,8 @@ const shareFiles = (() => {
 
 // ---------------------------------------------------------------- steps, views and text size
 
-const STEPS = ['field', 'weather', 'spray', 'products', 'finish', 'docs'];
-const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Details', docs: 'Documents' };
+const STEPS = ['field', 'weather', 'spray', 'products', 'finish', 'docs', 'invoice'];
+const STEP_NAMES = { field: 'Field', weather: 'Plan', spray: 'Spray', products: 'Products', finish: 'Details', docs: 'Documents', invoice: 'Invoice' };
 const STEP_INFO = {
   field: ['Choose the field', 'Type the field\'s address in the box on the map, then tap the field to use it. Or draw its corners.'],
   weather: ['Plan the job', 'Pick the drone or sprayer, then check whether the weather is right for spraying.'],
@@ -1084,6 +1121,7 @@ const STEP_INFO = {
   products: ['What went in the tank', 'Pick each product from the list, then type the rate from its label.'],
   finish: ['Job details', 'Customer, date and time, weather and applicator. These go on both documents.'],
   docs: ['Documents', 'Check the record is complete, then download the two PDFs.'],
+  invoice: ['Invoice', 'Type your rate per acre and what you charge for each product. The total adds itself up.'],
 };
 
 function showView(name) {
@@ -1100,6 +1138,7 @@ function setStep(name) {
   state.step = name;
   document.querySelectorAll('.step').forEach(p => { p.hidden = p.dataset.panel !== name; });
   document.querySelectorAll('.steps [data-step]').forEach(b => b.setAttribute('aria-selected', b.dataset.step === name));
+  if (name === 'invoice') renderInvoice(); // product names may have changed on step 4
   const slot = document.querySelector(`[data-map-slot="${name}"]`);
   const card = $('mapcard');
   if (slot) { slot.appendChild(card); card.hidden = false; requestAnimationFrame(() => { fmap?.invalidate(); if (state.fitPending) renderMap(); }); }
@@ -1161,6 +1200,7 @@ function onFieldInput(e) {
     if (t.dataset.path.startsWith('equipment.') && t.dataset.path !== 'equipment.targetGpa' && currentProfile()) eqMessage(`Changed for this job. Tap Save changes to keep it in "${currentProfile().name}" for next time.`);
   }
   else if (t.dataset.prod) state.rec.products[+t.closest('.product').dataset.i][t.dataset.prod] = t.type === 'checkbox' ? t.checked : t.value;
+  else if (t.dataset.invcost) state.rec.products[+t.dataset.invcost].invoiceCost = t.value;
   else return;
   markDirty();
   refreshDerived();
@@ -1205,6 +1245,10 @@ $('logTz').addEventListener('change', e => {
   syncLog(); analyze(); setTimesFromLog(); markDirty(); renderAll();
 });
 $('liveSource').addEventListener('change', e => { $('baudRow').hidden = e.target.value !== 'serial'; });
+for (const [id, act] of [['invSave', 'save'], ['invSend', 'send']]) {
+  if (act === 'send') $(id).hidden = !shareFiles;
+  $(id).addEventListener('click', e => makeDocument('invoice', act, e.currentTarget));
+}
 document.querySelectorAll('[data-doc]').forEach(b => {
   if (b.dataset.act === 'send') b.hidden = !shareFiles; // phones: open the text/email share menu
   b.addEventListener('click', () => makeDocument(b.dataset.doc, b.dataset.act, b));

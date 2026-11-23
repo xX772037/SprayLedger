@@ -91,3 +91,14 @@ test('customer report: re-entry time uses the longest REI in the mix', () => {
   const t = textOf(customerReport(r));
   assert.ok(t.includes('Jun 16, 2026, 8:33 AM'), 're-entry 48 h after the 08:33 finish');
 });
+
+test('invoice PDF: customer, field, acres × rate, each product charge and the total', async () => {
+  const { invoicePdf } = await import('../src/docs.js');
+  const r = record();
+  r.invoice = { ratePerAcre: '12', total: 0 };
+  r.products[0].invoiceCost = '250';
+  const t = textOf(invoicePdf(r));
+  for (const s of ['Invoice', 'Test Farm', 'North 40', '39.40 acres sprayed', '$12.00 per acre', '$472.80', 'Veltyma', '$250.00', 'Total due:', '$722.80', 'Test Spraying']) {
+    assert.ok(t.includes(s), `missing: ${s}`);
+  }
+});
