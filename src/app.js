@@ -1085,10 +1085,12 @@ const STEP_INFO = {
 };
 
 function showView(name) {
+  $('viewHome').hidden = name !== 'home';
   $('viewJobs').hidden = name !== 'jobs';
   $('viewJob').hidden = name !== 'job';
   $('btnJobs').setAttribute('aria-pressed', name === 'jobs');
   if (name === 'job') setStep(state.step || 'field');
+  else $('mapcard').hidden = true; // the map belongs to the job steps only
   scrollTo({ top: 0 });
 }
 
@@ -1212,6 +1214,9 @@ $('stepNext').addEventListener('click', () => { setStep(STEPS[Math.min(STEPS.len
 $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jobs' : 'job'));
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
+$('btnHome').addEventListener('click', () => showView('home'));
+for (const id of ['homeStart', 'homeStart2']) $(id).addEventListener('click', () => $('btnNew').click());
+$('homeSample').addEventListener('click', () => $('btnSample').click());
 
 // ---------------------------------------------------------------- equipment ("My equipment")
 
@@ -1411,8 +1416,9 @@ if ('serviceWorker' in navigator && !embedded && (location.protocol === 'https:'
     loadRecord(state.records[0]);
     showView('jobs');
   } else {
+    // First visit: the welcome page. The practice job is loaded behind it, ready for "Try the practice job".
     loadSample();
     state.step = 'spray';
-    showView('job');
+    showView('home');
   }
 })();
