@@ -1143,6 +1143,7 @@ const STEP_INFO = {
 
 function showView(name) {
   $('viewHome').hidden = name !== 'home';
+  $('viewAbout').hidden = name !== 'about';
   $('viewJobs').hidden = name !== 'jobs';
   $('viewJob').hidden = name !== 'job';
   $('btnJobs').setAttribute('aria-pressed', name === 'jobs');
@@ -1285,6 +1286,19 @@ $('btnJobs').addEventListener('click', () => showView($('viewJobs').hidden ? 'jo
 $('btnText').addEventListener('click', () => applyTextSize(SIZES[(SIZES.indexOf(document.documentElement.dataset.size || '') + 1) % SIZES.length]));
 $('btnLoadBoundary').addEventListener('click', () => $('fileInput').click());
 $('btnHome').addEventListener('click', () => showView('home'));
+
+// Disclaimer and privacy: one screen, opened from the footer or the welcome page; Back returns to where you were.
+let beforeAbout = 'home';
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-about]'); if (!b) return;
+  const now = ['home', 'jobs', 'job'].find(v => !$(v === 'home' ? 'viewHome' : v === 'jobs' ? 'viewJobs' : 'viewJob').hidden);
+  if (now) beforeAbout = now;
+  showView('about');
+  // scroll the section to just below the sticky top bar, so its heading isn't hidden behind it
+  const sec = $(b.dataset.about), bar = document.querySelector('.appbar');
+  if (sec) scrollTo({ top: sec.getBoundingClientRect().top + scrollY - (bar?.offsetHeight || 0) - 12 });
+});
+$('aboutBack').addEventListener('click', () => showView(beforeAbout));
 
 // ---------------------------------------------------------------- business logo
 function renderLogo() {
