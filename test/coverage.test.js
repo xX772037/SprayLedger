@@ -115,3 +115,11 @@ test('the spray_rate fixture and its control log (flow_l_min + spraying) give th
   assert.ok(Math.abs(ca.stats.sprayedM2 - cb.stats.sprayedM2) < 1e-6, `area ${ca.stats.sprayedM2} vs ${cb.stats.sprayedM2}`);
   assert.ok(Math.abs(ca.stats.volumeL - cb.stats.volumeL) < 1e-9, `volume ${ca.stats.volumeL} vs ${cb.stats.volumeL}`);
 });
+
+test('the practice job starts at 6:42 AM local time and its log times carry their zone', () => {
+  const j = sampleJob();
+  const r = parseFile(j.fileName, j.csv);
+  assert.equal(r.meta.naiveTime, false, 'times say they are UTC, so no device reads them hours off');
+  const first = new Date(r.points[0].t);
+  assert.deepEqual([first.getFullYear(), first.getMonth() + 1, first.getDate(), first.getHours(), first.getMinutes()], [2026, 6, 14, 6, 42]);
+});
